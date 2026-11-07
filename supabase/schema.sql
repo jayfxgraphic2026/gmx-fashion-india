@@ -1,0 +1,11 @@
+-- GMX FASHION INDIA production schema starter (run in Supabase SQL editor)
+create extension if not exists pgcrypto;
+create table if not exists public.products(id uuid primary key default gen_random_uuid(),sku text unique,slug text unique not null,name text not null,description text,category text not null,price numeric(12,2) not null,base_currency text not null default 'USD',stock integer not null default 0,images text[] not null default '{}',active boolean not null default true,created_at timestamptz default now());
+create table if not exists public.orders(id uuid primary key default gen_random_uuid(),order_number text unique not null,status text not null default 'pending',customer_email text not null,country text not null,currency text not null,subtotal numeric(12,2) not null,shipping numeric(12,2) default 0,tax numeric(12,2) default 0,total numeric(12,2) not null,shipping_address jsonb not null,created_at timestamptz default now());
+create table if not exists public.order_items(id uuid primary key default gen_random_uuid(),order_id uuid references public.orders(id) on delete cascade,product_id uuid references public.products(id),product_name text not null,quantity integer not null,unit_price numeric(12,2) not null);
+create table if not exists public.profiles(id uuid primary key references auth.users(id) on delete cascade,full_name text,role text not null default 'customer' check(role in ('customer','admin')),created_at timestamptz default now());
+create table if not exists public.inquiries(id uuid primary key default gen_random_uuid(),kind text not null default 'wholesale',full_name text not null,company text,country text,email text,whatsapp text,category text,quantity text,message text,created_at timestamptz default now());
+alter table public.products enable row level security; alter table public.orders enable row level security; alter table public.order_items enable row level security; alter table public.profiles enable row level security; alter table public.inquiries enable row level security;
+create policy "public can view active products" on public.products for select using(active=true);
+-- Add admin-only write policies after creating the first trusted admin profile.
+-- Never grant anonymous write access to orders, profiles, product inventory or payment state.
