@@ -9,7 +9,41 @@ export default function App(){
  const[catalog,setCatalog]=useState(seed);
  useEffect(()=>{let alive=true;async function loadProducts(){const {data,error}=await supabase.from('products').select('*').eq('active',true).order('created_at',{ascending:false});if(!alive)return;if(!error&&Array.isArray(data)&&data.length){const normalized=data.map(p=>({...p,image:p.image||p.images?.[0]||'',rating:p.rating??0,reviews:p.reviews??0,subcategory:p.subcategory||'',description:p.description||'',origin:p.origin||'India',stock:p.stock??0}));setCatalog(normalized);}else if(error){console.error('Supabase product load failed:',error.message);}setCatalogLoading(false);}loadProducts();return()=>{alive=false};},[]);
  const[catalogLoading,setCatalogLoading]=useState(true);
- const[items,setItems]=useState(()=>{try{return JSON.parse(localStorage.gmxCart||'[]')}catch{return[]}}),[wish,setWish]=useState(()=>JSON.parse(localStorage.gmxWish||'[]')),[country,setCountry]=useState('USD'),[lang,setLang]=useState('English'),[search,setSearch]=useState(''),[cat,setCat]=useState('All Collections'),[sort,setSort]=useState('Featured'),[cartOpen,setCartOpen]=useState(false),[active,setActive]=useState(null),[qty,setQty]=useState(1),[notice,setNotice]=useState(''),[page,setPage]=useState('home'),[mobile,setMobile]=useState(false),[filter,setFilter]=useState(false),[email,setEmail]=useState(''),[activeVariants,setActiveVariants]=useState([]),[selectedSize,setSelectedSize]=useState(''),[selectedColor,setSelectedColor]=useState(''),[variantLoading,setVariantLoading]=useState(false);
+ const[items,setItems]=useState(()=>{try{return JSON.parse(localStorage.gmxCart||'[]')}catch{return[]}}),[wish,setWish]=useState(()=>JSON.parse(localStorage.gmxWish||'[]')),[country,setCountry]=useState('USD'),[lang,setLang]=useState('English'),[search,setSearch]=useState(''),[cat,setCat]=useState('All Collections'),[sort,setSort]=useState('Featured'),[cartOpen,setCartOpen]=useState(false),[active,setActive]=useState(null),[qty,setQty]=useState(1),[notice,setNotice]=useState(''),[page,setPage]=useState('home'),[mobile,setMobile]=useState(false),[filter,setFilter]=useState(false),[email,setEmail]=useState(''),[activeVariants,setActiveVariants]=useState([]),[selectedSize,setSelectedSize]=useState(''),[selectedColor,setSelectedColor]=useState(''),[variantLoading,setVariantLoading]=useState(false),
+ [authUser,setAuthUser]=useState(null),[authMode,setAuthMode]=useState('login'),
+ [authName,setAuthName]=useState(''),[authEmail,setAuthEmail]=useState(''),
+ [authPassword,setAuthPassword]=useState(''),[authBusy,setAuthBusy]=useState(false),
+ [authMessage,setAuthMessage]=useState('');
+ useEffect(()=>{
+  let mounted=true;
+  supabase.auth.getSession().then(({data})=>{if(mounted)setAuthUser(data?.session?.user||null);});
+  const {data:{subscription}}=supabase.auth.onAuthStateChange((_event,session)=>{setAuthUser(session?.user||null);});
+  return ()=>{mounted=false;subscription?.unsubscribe();};
+ },[]);
+ async function submitCustomerAuth(e){
+  e.preventDefault();setAuthBusy(true);setAuthMessage('');
+  try{
+   if(authMode==='signup'){
+    const {data,error}=await supabase.auth.signUp({
+     email:authEmail.trim(),password:authPassword,
+     options:{data:{full_name:authName.trim()}}
+    });
+    if(error)throw error;
+    if(data?.session){setAuthUser(data.user);setAuthMessage('Account created successfully.');}
+    else{setAuthMessage('Registration received. Please check your email for the confirmation link, then log in.');setAuthMode('login');}
+   }else{
+    const {data,error}=await supabase.auth.signInWithPassword({email:authEmail.trim(),password:authPassword});
+    if(error)throw error;
+    setAuthUser(data.user);setAuthMessage('You are now logged in.');
+   }
+  }catch(error){setAuthMessage(error?.message||'Unable to complete sign in. Please try again.');}
+  finally{setAuthBusy(false);}
+ }
+ async function customerLogout(){
+  const {error}=await supabase.auth.signOut();
+  if(error){setAuthMessage(error.message);return;}
+  setAuthUser(null);setAuthPassword('');setAuthMessage('You have been logged out.');
+ }
  const products=useMemo(()=>catalog.filter(p=>(cat==='All Collections'||p.category===cat)&&(`${p.name} ${p.category} ${p.subcategory}`).toLowerCase().includes(search.toLowerCase())).sort((a,b)=>sort==='Price: Low to High'?(Number(a.price)||0)-(Number(b.price)||0):sort==='Price: High to Low'?(Number(b.price)||0)-(Number(a.price)||0):0),[catalog,cat,search,sort]);
  const count=items.reduce((s,p)=>s+p.qty,0),total=items.reduce((s,p)=>s+(Number(p.price)||0)*p.qty,0);const chosenVariant=activeVariants.find(v=>v.size===selectedSize&&v.color===selectedColor);const sizeOptions=[...new Set(activeVariants.map(v=>v.size).filter(Boolean))];const colorOptions=[...new Set(activeVariants.filter(v=>!selectedSize||v.size===selectedSize).map(v=>v.color).filter(Boolean))];
  function persistCart(v){setItems(v);localStorage.gmxCart=JSON.stringify(v)} function add(p,q=1,variant=null){let old=[...items],key=variant?.id||'base',idx=old.findIndex(x=>x.id===p.id&&(x.variantId||'base')===key);if(idx>=0)old[idx].qty+=q;else old.push({...p,qty:q,variantId:variant?.id||null,variantSize:variant?.size||'',variantColor:variant?.color||'',variantSku:variant?.sku||'',variantStock:variant?.stock??null,variantImage:variant?.image_url||''});persistCart(old);setNotice('Added to your bag');setTimeout(()=>setNotice(''),2200)}
@@ -34,7 +68,31 @@ export default function App(){
  {page==='wishlist'&&<section className="section"><div className="section-head"><div><label>SAVED FOR LATER</label><h2>Your <i>wishlist</i></h2></div></div>{cards(catalog.filter(p=>wish.includes(p.id)))}</section>}
  {page==='wholesale'&&<section className="section form-page"><label>GLOBAL SOURCING · WHOLESALE & EXPORT</label><h2>Become our international<br/><i>business partner.</i></h2><p>Partner with GMX FASHION INDIA to source authentic Indian fashion, spiritual products, traditional accessories and lifestyle collections for your market.</p><form onSubmit={e=>{e.preventDefault();setNotice('Thank you. Your enquiry has been prepared. Please send it to our team on WhatsApp.');}}><div className="form-grid">{['Full Name','Company Name','Country','Email','WhatsApp Number','Product Category','Required Quantity'].map((x,i)=><label>{x}<input required={i===0||i===3} placeholder={x}/></label>)}</div><label>Message<textarea placeholder="Tell us about the products and quantities you are interested in."/></label><button className="solid">SUBMIT ENQUIRY <ArrowRight/></button><a className="wa-inline" href={wa} target="_blank">OR CHAT WITH OUR TEAM ON WHATSAPP</a></form></section>}
  {page==='contact'&&<section className="section form-page"><label>WE'D LOVE TO HEAR FROM YOU</label><h2>Let's <i>connect.</i></h2><p>For product questions, order support and international business enquiries.</p><div className="contact-card"><h3>GMX FASHION INDIA</h3><p>91, Village Kandala, District Mohali, Punjab, India – 140306</p><p>WhatsApp: +91 62396 86493</p><a href={wa} target="_blank" className="solid">CHAT ON WHATSAPP</a></div></section>}
- {page==='account'&&<section className="section form-page"><label>YOUR GMX ACCOUNT</label><h2>Welcome <i>back.</i></h2><p>Customer accounts, saved addresses and order history will be enabled after secure authentication is configured.</p><div className="contact-card"><h3>Shopping as a guest</h3><p>You can browse collections and manage your current bag on this device.</p><button className="solid" onClick={()=>setCartOpen(true)}>VIEW MY BAG</button></div></section>}
+ {page==='account'&&<section className="section form-page">
+  <label>YOUR GMX ACCOUNT</label><h2>{authUser?<>Welcome <i>back.</i></>:<>Welcome to <i>GMX.</i></>}</h2>
+  {authUser?
+   <div className="contact-card">
+    <h3>Account details</h3><p><b>Email:</b> {authUser.email}</p>
+    <p>Your customer account is active. Order history will appear here after the order table and checkout flow are connected.</p>
+    <button className="solid" onClick={()=>setCartOpen(true)}>VIEW MY BAG</button>
+    <button className="outline full" style={{marginTop:'12px'}} onClick={customerLogout}>LOG OUT</button>
+   </div>:
+   <div className="contact-card" style={{maxWidth:'560px'}}>
+    <div style={{display:'flex',gap:'12px',marginBottom:'20px',flexWrap:'wrap'}}>
+     <button className={authMode==='login'?'solid':'outline'} onClick={()=>{setAuthMode('login');setAuthMessage('')}}>LOG IN</button>
+     <button className={authMode==='signup'?'solid':'outline'} onClick={()=>{setAuthMode('signup');setAuthMessage('')}}>CREATE ACCOUNT</button>
+    </div>
+    <form onSubmit={submitCustomerAuth}>
+     {authMode==='signup'&&<label>Full Name<input value={authName} onChange={e=>setAuthName(e.target.value)} placeholder="Your full name" required autoComplete="name"/></label>}
+     <label>Email Address<input type="email" value={authEmail} onChange={e=>setAuthEmail(e.target.value)} placeholder="you@example.com" required autoComplete="email"/></label>
+     <label>Password<input type="password" value={authPassword} onChange={e=>setAuthPassword(e.target.value)} placeholder="At least 6 characters" required minLength={6} autoComplete={authMode==='signup'?'new-password':'current-password'}/></label>
+     <button className="solid full" type="submit" disabled={authBusy}>{authBusy?'PLEASE WAIT...':authMode==='signup'?'CREATE ACCOUNT':'LOG IN'}</button>
+    </form>
+    {authMessage&&<p role="status" style={{marginTop:'14px'}}>{authMessage}</p>}
+    <p style={{marginTop:'18px'}}>You can also continue shopping as a guest. Your bag is saved on this device.</p>
+    <button className="outline full" onClick={()=>setCartOpen(true)}>VIEW MY BAG</button>
+   </div>}
+  </section>}
  <footer><div className="footer-main"><div className="footer-brand"><span className="brand-mark">GMX</span><h3>FASHION INDIA</h3><p>Bringing India's Heritage & Fashion to the World.</p><a href={wa} target="_blank">WHATSAPP: +91 62396 86493</a></div><div><b>EXPLORE</b>{cats.slice(1,6).map(c=><button onClick={()=>{setCat(c);setPage('shop')}}>{c}</button>)}</div><div><b>CUSTOMER CARE</b>{['Track My Order','Shipping Policy','Returns & Refunds','Privacy Policy','Terms & Conditions'].map(c=><button onClick={()=>setNotice('This policy page will be published with verified business details.')}>{c}</button>)}</div><div><b>BUSINESS</b><button onClick={()=>setPage('wholesale')}>Wholesale & Export</button><button onClick={()=>setPage('wholesale')}>Become a Distributor</button><button onClick={()=>setPage('contact')}>Contact Us</button><p>91, Village Kandala,<br/>District Mohali, Punjab 140306, India</p></div></div><div className="footer-bottom"><span>© 2026 GMX FASHION INDIA. ALL RIGHTS RESERVED.</span><span>MADE WITH CARE IN INDIA ✦</span></div></footer>
  <a className="whatsapp" href={wa} target="_blank" aria-label="WhatsApp"><MessageCircle/> <span>Chat with us</span></a>
  {cartOpen&&<div className="overlay" onClick={()=>setCartOpen(false)}><aside className="cart-drawer" onClick={e=>e.stopPropagation()}><div className="drawer-head"><h2>Your bag <small>({count} items)</small></h2><button onClick={()=>setCartOpen(false)}><X/></button></div>{items.length? <>{items.map(p=><div className="cart-line"><img src={p.variantImage||p.image}/><div><b>{p.name}</b>{(p.variantSize||p.variantColor)&&<small style={{display:'block',margin:'4px 0'}}>Size: {p.variantSize||'—'} · Colour: {p.variantColor||'—'}</small>}<strong>{Number(p.price)>0?money(Number(p.price),country):'Price on request'}</strong><div className="qty"><button onClick={()=>persistCart(items.map(x=>x.id===p.id&&(x.variantId||'base')===(p.variantId||'base')?{...x,qty:Math.max(1,x.qty-1)}:x))}><Minus size={13}/></button>{p.qty}<button onClick={()=>persistCart(items.map(x=>x.id===p.id&&(x.variantId||'base')===(p.variantId||'base')?{...x,qty:x.qty+1}:x))}><Plus size={13}/></button><button className="remove" onClick={()=>persistCart(items.filter(x=>!(x.id===p.id&&(x.variantId||'base')===(p.variantId||'base'))))}>Remove</button></div></div></div>)}<div className="cart-total"><span>Subtotal · indicative</span><b>{money(total,country)}</b></div><p className="muted">Shipping, duties and applicable taxes are calculated after destination and shipping method are confirmed.</p><button className="solid full" onClick={()=>setNotice('Checkout integration is not active yet. Configure a merchant gateway and shipping rules before accepting payments.')}>CONTINUE TO CHECKOUT</button></>:<div className="empty"><ShoppingBag size={36}/><h3>Your bag is waiting</h3><p>Explore the collection and add something special.</p><button className="solid" onClick={()=>{setCartOpen(false);setPage('shop')}}>START SHOPPING</button></div>}</aside></div>}
