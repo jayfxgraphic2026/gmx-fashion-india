@@ -13,13 +13,69 @@ export default function App(){
  [authUser,setAuthUser]=useState(null),[authMode,setAuthMode]=useState('login'),
  [authName,setAuthName]=useState(''),[authEmail,setAuthEmail]=useState(''),
  [authPassword,setAuthPassword]=useState(''),[authBusy,setAuthBusy]=useState(false),
- [authMessage,setAuthMessage]=useState('');
+ [authMessage,setAuthMessage]=useState(''),
+ [customerProfile,setCustomerProfile]=useState({full_name:'',phone:''}),
+ [profileBusy,setProfileBusy]=useState(false),[addresses,setAddresses]=useState([]),
+ [addressForm,setAddressForm]=useState({label:'Home',recipient_name:'',phone:'',address_line1:'',address_line2:'',city:'',state:'',postal_code:'',country:'India',is_default:false}),
+ [editingAddressId,setEditingAddressId]=useState(null),[addressFormOpen,setAddressFormOpen]=useState(false),[addressBusy,setAddressBusy]=useState(false);
  useEffect(()=>{
   let mounted=true;
   supabase.auth.getSession().then(({data})=>{if(mounted)setAuthUser(data?.session?.user||null);});
   const {data:{subscription}}=supabase.auth.onAuthStateChange((_event,session)=>{setAuthUser(session?.user||null);});
   return ()=>{mounted=false;subscription?.unsubscribe();};
  },[]);
+ useEffect(()=>{
+  let alive=true;
+  async function loadCustomerData(){
+   if(!authUser){setCustomerProfile({full_name:'',phone:''});setAddresses([]);return;}
+   const [profileResult,addressResult]=await Promise.all([
+    supabase.from('customer_profiles').select('full_name,phone').eq('user_id',authUser.id).maybeSingle(),
+    supabase.from('customer_addresses').select('*').eq('user_id',authUser.id).order('created_at',{ascending:false})
+   ]);
+   if(!alive)return;
+   if(profileResult.error) setAuthMessage('Profile could not be loaded: '+profileResult.error.message);
+   else setCustomerProfile({full_name:profileResult.data?.full_name||authUser.user_metadata?.full_name||'',phone:profileResult.data?.phone||''});
+   if(addressResult.error) setAuthMessage('Addresses could not be loaded: '+addressResult.error.message);
+   else setAddresses(addressResult.data||[]);
+  }
+  loadCustomerData();
+  return()=>{alive=false;};
+ },[authUser]);
+ async function saveCustomerProfile(e){
+  e.preventDefault();if(!authUser)return;setProfileBusy(true);setAuthMessage('');
+  const {error}=await supabase.from('customer_profiles').upsert({user_id:authUser.id,full_name:customerProfile.full_name.trim(),phone:customerProfile.phone.trim(),updated_at:new Date().toISOString()},{onConflict:'user_id'});
+  setProfileBusy(false);
+  setAuthMessage(error?'Profile save failed: '+error.message:'Your profile has been saved.');
+ }
+ function startNewAddress(){setEditingAddressId(null);setAddressForm({label:'Home',recipient_name:customerProfile.full_name||'',phone:customerProfile.phone||'',address_line1:'',address_line2:'',city:'',state:'',postal_code:'',country:'India',is_default:addresses.length===0});setAddressFormOpen(true);}
+ function startEditAddress(a){setEditingAddressId(a.id);setAddressForm({label:a.label||'Home',recipient_name:a.recipient_name||'',phone:a.phone||'',address_line1:a.address_line1||'',address_line2:a.address_line2||'',city:a.city||'',state:a.state||'',postal_code:a.postal_code||'',country:a.country||'India',is_default:!!a.is_default});setAddressFormOpen(true);}
+ async function saveCustomerAddress(e){
+  e.preventDefault();if(!authUser)return;setAddressBusy(true);setAuthMessage('');
+  try{
+   if(addressForm.is_default){const {error:clearError}=await supabase.from('customer_addresses').update({is_default:false}).eq('user_id',authUser.id);if(clearError)throw clearError;}
+   const payload={...addressForm,user_id:authUser.id,label:addressForm.label.trim(),recipient_name:addressForm.recipient_name.trim(),phone:addressForm.phone.trim(),address_line1:addressForm.address_line1.trim(),address_line2:addressForm.address_line2.trim()||null,city:addressForm.city.trim(),state:addressForm.state.trim(),postal_code:addressForm.postal_code.trim(),country:addressForm.country.trim(),updated_at:new Date().toISOString()};
+   const result=editingAddressId?await supabase.from('customer_addresses').update(payload).eq('id',editingAddressId).eq('user_id',authUser.id):await supabase.from('customer_addresses').insert(payload);
+   if(result.error)throw result.error;
+   const {data,error}=await supabase.from('customer_addresses').select('*').eq('user_id',authUser.id).order('created_at',{ascending:false});if(error)throw error;
+   setAddresses(data||[]);setAddressFormOpen(false);setEditingAddressId(null);setAuthMessage(editingAddressId?'Address updated successfully.':'Address saved successfully.');
+  }catch(error){setAuthMessage('Address save failed: '+(error?.message||'Please try again.'));}
+  finally{setAddressBusy(false);}
+ }
+ async function deleteCustomerAddress(id){
+  if(!authUser||!window.confirm('Delete this delivery address?'))return;
+  const {error}=await supabase.from('customer_addresses').delete().eq('id',id).eq('user_id',authUser.id);
+  if(error){setAuthMessage('Address delete failed: '+error.message);return;}
+  setAddresses(prev=>prev.filter(a=>a.id!==id));setAuthMessage('Address deleted.');
+ }
+ async function makeDefaultAddress(id){
+  if(!authUser)return;setAddressBusy(true);
+  const {error:clearError}=await supabase.from('customer_addresses').update({is_default:false}).eq('user_id',authUser.id);
+  if(clearError){setAuthMessage('Could not update default address: '+clearError.message);setAddressBusy(false);return;}
+  const {error}=await supabase.from('customer_addresses').update({is_default:true,updated_at:new Date().toISOString()}).eq('id',id).eq('user_id',authUser.id);
+  if(error)setAuthMessage('Could not update default address: '+error.message);
+  else{setAddresses(prev=>prev.map(a=>({...a,is_default:a.id===id})));setAuthMessage('Default delivery address updated.');}
+  setAddressBusy(false);
+ }
  async function submitCustomerAuth(e){
   e.preventDefault();setAuthBusy(true);setAuthMessage('');
   try{
@@ -71,11 +127,33 @@ export default function App(){
  {page==='account'&&<section className="section form-page">
   <label>YOUR GMX ACCOUNT</label><h2>{authUser?<>Welcome <i>back.</i></>:<>Welcome to <i>GMX.</i></>}</h2>
   {authUser?
-   <div className="contact-card">
-    <h3>Account details</h3><p><b>Email:</b> {authUser.email}</p>
-    <p>Your customer account is active. Order history will appear here after the order table and checkout flow are connected.</p>
-    <button className="solid" onClick={()=>setCartOpen(true)}>VIEW MY BAG</button>
-    <button className="outline full" style={{marginTop:'12px'}} onClick={customerLogout}>LOG OUT</button>
+   <div style={{maxWidth:'820px',display:'grid',gap:'22px'}}>
+    <div className="contact-card">
+     <h3>Account details</h3><p><b>Email:</b> {authUser.email}</p>
+     <form onSubmit={saveCustomerProfile} style={{display:'grid',gap:'12px',marginTop:'18px'}}>
+      <label>Full Name<input value={customerProfile.full_name} onChange={e=>setCustomerProfile(v=>({...v,full_name:e.target.value}))} placeholder="Your full name" required autoComplete="name"/></label>
+      <label>Mobile Number<input type="tel" value={customerProfile.phone} onChange={e=>setCustomerProfile(v=>({...v,phone:e.target.value}))} placeholder="Country code + mobile number" required autoComplete="tel"/></label>
+      <button className="solid" type="submit" disabled={profileBusy}>{profileBusy?'SAVING...':'SAVE PROFILE'}</button>
+     </form>
+     <p style={{marginTop:'18px'}}>Order history will appear here after the order table and checkout flow are connected.</p>
+     <button className="outline" onClick={()=>setCartOpen(true)}>VIEW MY BAG</button>
+     <button className="outline full" style={{marginTop:'12px'}} onClick={customerLogout}>LOG OUT</button>
+    </div>
+    <div className="contact-card">
+     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px',flexWrap:'wrap'}}><h3 style={{margin:0}}>My delivery addresses</h3><button className="solid" type="button" onClick={startNewAddress}>+ ADD ADDRESS</button></div>
+     {addresses.length===0?<p style={{marginTop:'18px'}}>You have not saved a delivery address yet.</p>:<div style={{display:'grid',gap:'14px',marginTop:'18px'}}>{addresses.map(a=><div key={a.id} style={{border:'1px solid #e8e0d8',borderRadius:'10px',padding:'16px'}}><div style={{display:'flex',justifyContent:'space-between',gap:'10px',flexWrap:'wrap'}}><b>{a.label} {a.is_default?' · DEFAULT':''}</b><div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}><button className="outline" type="button" onClick={()=>startEditAddress(a)}>EDIT</button><button className="outline" type="button" onClick={()=>deleteCustomerAddress(a.id)}>DELETE</button></div></div><p style={{margin:'10px 0 4px'}}><b>{a.recipient_name}</b> · {a.phone}</p><p style={{margin:0}}>{a.address_line1}{a.address_line2?', '+a.address_line2:''}, {a.city}, {a.state} {a.postal_code}, {a.country}</p>{!a.is_default&&<button className="text-link" type="button" disabled={addressBusy} onClick={()=>makeDefaultAddress(a.id)} style={{marginTop:'10px'}}>MAKE DEFAULT ADDRESS</button>}</div>)}</div>}
+     {addressFormOpen&&<form onSubmit={saveCustomerAddress} style={{display:'grid',gap:'12px',marginTop:'22px',paddingTop:'18px',borderTop:'1px solid #e8e0d8'}}>
+      <h3>{editingAddressId?'Edit delivery address':'Add delivery address'}</h3>
+      <label>Address Label<select value={addressForm.label} onChange={e=>setAddressForm(v=>({...v,label:e.target.value}))}><option>Home</option><option>Office</option><option>Other</option></select></label>
+      <label>Recipient Name<input value={addressForm.recipient_name} onChange={e=>setAddressForm(v=>({...v,recipient_name:e.target.value}))} required/></label>
+      <label>Mobile Number<input type="tel" value={addressForm.phone} onChange={e=>setAddressForm(v=>({...v,phone:e.target.value}))} required/></label>
+      <label>Address Line 1<input value={addressForm.address_line1} onChange={e=>setAddressForm(v=>({...v,address_line1:e.target.value}))} placeholder="House / Building / Street" required/></label>
+      <label>Address Line 2 (Optional)<input value={addressForm.address_line2} onChange={e=>setAddressForm(v=>({...v,address_line2:e.target.value}))} placeholder="Area / Landmark"/></label>
+      <div className="form-grid"><label>City<input value={addressForm.city} onChange={e=>setAddressForm(v=>({...v,city:e.target.value}))} required/></label><label>State / Province<input value={addressForm.state} onChange={e=>setAddressForm(v=>({...v,state:e.target.value}))} required/></label><label>Postal / ZIP Code<input value={addressForm.postal_code} onChange={e=>setAddressForm(v=>({...v,postal_code:e.target.value}))} required/></label><label>Country<input value={addressForm.country} onChange={e=>setAddressForm(v=>({...v,country:e.target.value}))} required/></label></div>
+      <label style={{display:'flex',alignItems:'center',gap:'9px'}}><input type="checkbox" checked={addressForm.is_default} onChange={e=>setAddressForm(v=>({...v,is_default:e.target.checked}))}/> Set as default delivery address</label>
+      <div style={{display:'flex',gap:'10px',flexWrap:'wrap'}}><button className="solid" type="submit" disabled={addressBusy}>{addressBusy?'SAVING...':'SAVE ADDRESS'}</button><button className="outline" type="button" onClick={()=>{setAddressFormOpen(false);setEditingAddressId(null)}}>CANCEL</button></div>
+     </form>}
+    </div>
    </div>:
    <div className="contact-card" style={{maxWidth:'560px'}}>
     <div style={{display:'flex',gap:'12px',marginBottom:'20px',flexWrap:'wrap'}}>
