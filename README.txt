@@ -47,3 +47,4 @@ Copy `.env.example` to `.env` for local frontend configuration. Only public clie
 
 ## Product photos
 The original ZIP's 30 image files are included in `public/products/`. They are assigned sequentially as provisional catalogue images. Review and match every photo to the actual SKU before publishing.
+Cloudflare deployment configuration updated.
