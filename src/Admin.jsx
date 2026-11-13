@@ -277,5 +277,23 @@ const s={
   order:{border:'1px solid #dbe4f0',borderRadius:'16px',padding:'clamp(14px,2vw,22px)',margin:'16px 0',background:'linear-gradient(180deg,#fff,#fbfdff)'},
   orderItem:{display:'flex',justifyContent:'space-between',gap:'12px',padding:'8px 0',borderBottom:'1px solid #eee',flexWrap:'wrap'},
   statusRow:{display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap',marginTop:'12px'},
-  notice:{background:'#eff6ff',color:'#1e40af',padding:'12px 15px',borderRadius:'10px',border:'1px solid #bfdbfe'},\n  trackingBox:{marginTop:'18px',padding:'16px',border:'1px solid #dbeafe',borderRadius:'14px',background:'#f8fbff'},\n  trackingGrid:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:'8px 14px'}
+  notice: {
+  background: '#eff6ff',
+  color: '#1e40af',
+  padding: '12px 15px',
+  borderRadius: '10px',
+  border: '1px solid #bfdbfe'
+},
+trackingBox: {
+  marginTop: '18px',
+  padding: '16px',
+  border: '1px solid #dbeafe',
+  borderRadius: '14px',
+  background: '#f8fbff'
+},
+trackingGrid: {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  gap: '8px 14px'
+}
 };
