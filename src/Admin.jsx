@@ -22,7 +22,7 @@ export default function Admin() {
   const [products,setProducts]=useState([]), [orders,setOrders]=useState([]), [orderItems,setOrderItems]=useState([]), [message,setMessage]=useState('');
   const [form,setForm]=useState(blank), [photos,setPhotos]=useState([]), [saving,setSaving]=useState(false);
   const [selectedProduct,setSelectedProduct]=useState(null), [variants,setVariants]=useState([]), [variantForm,setVariantForm]=useState(blankVariant), [variantPhoto,setVariantPhoto]=useState(null), [variantSaving,setVariantSaving]=useState(false), [variantMessage,setVariantMessage]=useState('');
-  const [orderFilter,setOrderFilter]=useState('All'), [updatingOrder,setUpdatingOrder]=useState(''), [orderMessage,setOrderMessage]=useState('');
+  const [orderFilter,setOrderFilter]=useState('All'), [updatingOrder,setUpdatingOrder]=useState(''), [orderMessage,setOrderMessage]=useState(''), [savingTracking,setSavingTracking]=useState('');
   const [shippingRates,setShippingRates]=useState([]), [shippingForm,setShippingForm]=useState({id:'',country_code:'',country_name:'',currency:'USD',shipping_charge:'0',free_shipping_minimum:'',duty_percent:'0',active:true}), [shippingMessage,setShippingMessage]=useState(''), [shippingSaving,setShippingSaving]=useState(false);
 
   useEffect(()=>{ checkUser(); },[]);
@@ -160,6 +160,22 @@ export default function Admin() {
     else {setOrders(prev=>prev.map(o=>o.id===orderId?{...o,status}:o));setOrderMessage('Order status updated.');}
     setUpdatingOrder('');
   }
+  function changeOrderField(orderId,field,value){
+    setOrders(prev=>prev.map(o=>o.id===orderId?{...o,[field]:value}:o));
+  }
+  async function saveTracking(order){
+    setSavingTracking(order.id);setOrderMessage('Saving tracking details...');
+    const payload={
+      courier_name:(order.courier_name||'').trim()||null,
+      tracking_number:(order.tracking_number||'').trim()||null,
+      tracking_url:(order.tracking_url||'').trim()||null,
+      shipped_at:order.shipped_at||null
+    };
+    const {error}=await supabase.from('orders').update(payload).eq('id',order.id);
+    if(error)setOrderMessage('Tracking details save failed: '+error.message);
+    else setOrderMessage('Tracking details saved successfully.');
+    setSavingTracking('');
+  }
   const filteredOrders=useMemo(()=>orderFilter==='All'?orders:orders.filter(o=>(o.status||'Pending').toLowerCase()===orderFilter.toLowerCase()),[orders,orderFilter]);
   const customers=useMemo(()=>{
     const map=new Map();
@@ -174,13 +190,25 @@ export default function Admin() {
   if(!authorized)return <main style={s.page}><section style={s.card}><h1>GMX FASHION INDIA</h1><h2>Admin Login</h2><form onSubmit={login}><input name="email" type="email" placeholder="Admin email" required style={s.input}/><input name="password" type="password" placeholder="Password" required style={s.input}/><button style={s.button}>LOGIN</button></form>{message&&<p>{message}</p>}</section></main>;
 
   return <main style={s.page}>
-    <header style={s.header}><h1>GMX FASHION INDIA — ADMIN</h1><button type="button" onClick={logout} style={s.secondary}>LOGOUT</button></header>
-    <nav style={s.nav}>{[['dashboard','DASHBOARD'],['orders','ORDERS'],['shipping','SHIPPING'],['customers','CUSTOMERS'],['products','PRODUCTS']].map(([id,label])=><button key={id} type="button" onClick={()=>setActiveTab(id)} style={activeTab===id?s.activeTab:s.tab}>{label}</button>)}</nav>
+    <header style={s.header}><h1 className="gmx-admin-title" style={{fontSize:"clamp(28px,4vw,42px)",fontWeight:800}}>GMX FASHION INDIA <span style={{color:"#64748b",fontWeight:500}}> / ADMIN</span></h1><button type="button" onClick={logout} style={s.secondary}>LOGOUT</button></header>
+    <nav className="gmx-admin-nav" style={s.nav}>{[['dashboard','DASHBOARD'],['orders','ORDERS'],['shipping','SHIPPING'],['customers','CUSTOMERS'],['products','PRODUCTS']].map(([id,label])=><button key={id} type="button" onClick={()=>setActiveTab(id)} style={activeTab===id?s.activeTab:s.tab}>{label}</button>)}</nav>
     {message&&<p style={s.notice}>{message}</p>}
     {activeTab==='dashboard'&&<section style={s.card}><h2>Dashboard Overview</h2><div style={s.stats}>{[['Total Orders',stats.orders],['Pending Orders',stats.pending],['Customers',stats.customers],['Products',stats.products],['Order Value',money(stats.sales,'USD')]].map(([label,value])=><div key={label} style={s.stat}><small>{label}</small><h2>{value}</h2></div>)}</div><button style={s.secondary} onClick={()=>{loadOrders();loadProducts();}}>REFRESH DASHBOARD</button></section>}
     {activeTab==='orders'&&<section style={s.card}><div style={s.sectionHead}><h2>Customer Orders ({orders.length})</h2><button type="button" style={s.secondary} onClick={loadOrders}>REFRESH</button></div>{orderMessage&&<p style={s.notice}>{orderMessage}</p>}<label>Filter Orders</label><select style={s.input} value={orderFilter} onChange={e=>setOrderFilter(e.target.value)}>{['All',...ORDER_STATUSES].map(v=><option key={v}>{v}</option>)}</select>
       {filteredOrders.length===0&&<p>No orders found for this filter.</p>}
-      {filteredOrders.map(o=><article key={o.id} style={s.order}><div style={s.sectionHead}><div><b>Order: {o.order_number||o.id}</b><p>{o.customer_email||'No customer email'} · {o.country||'Country not set'} · {new Date(o.created_at).toLocaleString()}</p></div><strong>{money(o.total,o.currency||'USD')}</strong></div><p><b>Delivery:</b> {addressText(o.shipping_address)}</p><div style={s.stats}><div><small>Subtotal</small><b>{money(o.subtotal,o.currency)}</b></div><div><small>Shipping</small><b>{money(o.shipping,o.currency)}</b></div><div><small>Tax / Duty</small><b>{money(o.tax,o.currency)}</b></div></div><h4>Products</h4>{itemsFor(o.id).length?itemsFor(o.id).map((it,idx)=><div key={it.id||idx} style={s.orderItem}><span>{it.product_name||it.product_id||'Product'}{it.variant_size||it.variant_color?` — ${[it.variant_size,it.variant_color].filter(Boolean).join(' / ')}`:''} · Qty {it.quantity}</span><b>{money(Number(it.unit_price||0)*Number(it.quantity||0),o.currency)}</b></div>):<p>No order items found.</p>}<div style={s.statusRow}><label>Order Status</label><select style={{...s.input,maxWidth:'240px',margin:0}} value={o.status||'Pending'} disabled={updatingOrder===o.id} onChange={e=>updateOrderStatus(o.id,e.target.value)}>{ORDER_STATUSES.map(v=><option key={v}>{v}</option>)}</select>{updatingOrder===o.id&&<small>Updating…</small>}</div></article>)}
+      {filteredOrders.map(o=><article key={o.id} style={s.order}><div style={s.sectionHead}><div><b>Order: {o.order_number||o.id}</b><p>{o.customer_email||'No customer email'} · {o.country||'Country not set'} · {new Date(o.created_at).toLocaleString()}</p></div><strong>{money(o.total,o.currency||'USD')}</strong></div><p><b>Delivery:</b> {addressText(o.shipping_address)}</p><div style={s.stats}><div><small>Subtotal</small><b>{money(o.subtotal,o.currency)}</b></div><div><small>Shipping</small><b>{money(o.shipping,o.currency)}</b></div><div><small>Tax / Duty</small><b>{money(o.tax,o.currency)}</b></div></div><h4>Products</h4>{itemsFor(o.id).length?itemsFor(o.id).map((it,idx)=><div key={it.id||idx} style={s.orderItem}><span>{it.product_name||it.product_id||'Product'}{it.variant_size||it.variant_color?` — ${[it.variant_size,it.variant_color].filter(Boolean).join(' / ')}`:''} · Qty {it.quantity}</span><b>{money(Number(it.unit_price||0)*Number(it.quantity||0),o.currency)}</b></div>):<p>No order items found.</p>}<div style={s.statusRow}><label>Order Status</label><select style={{...s.input,maxWidth:'240px',margin:0}} value={o.status||'Pending'} disabled={updatingOrder===o.id} onChange={e=>updateOrderStatus(o.id,e.target.value)}>{ORDER_STATUSES.map(v=><option key={v}>{v}</option>)}</select>{updatingOrder===o.id&&<small>Updating…</small>}</div>
+        <div style={s.trackingBox}>
+          <h4 style={{margin:'4px 0 12px',color:'#172554'}}>Shipment & Tracking Details</h4>
+          <div style={s.trackingGrid}>
+            <div><label>Courier Name</label><input style={s.input} placeholder="DHL, FedEx, UPS..." value={o.courier_name||''} onChange={e=>changeOrderField(o.id,'courier_name',e.target.value)}/></div>
+            <div><label>Tracking Number</label><input style={s.input} placeholder="Enter tracking number" value={o.tracking_number||''} onChange={e=>changeOrderField(o.id,'tracking_number',e.target.value)}/></div>
+            <div style={{gridColumn:'1 / -1'}}><label>Tracking URL</label><input style={s.input} type="url" placeholder="https://courier-tracking-page..." value={o.tracking_url||''} onChange={e=>changeOrderField(o.id,'tracking_url',e.target.value)}/></div>
+            <div><label>Dispatch Date</label><input style={s.input} type="datetime-local" value={o.shipped_at?new Date(o.shipped_at).toISOString().slice(0,16):''} onChange={e=>changeOrderField(o.id,'shipped_at',e.target.value?new Date(e.target.value).toISOString():null)}/></div>
+          </div>
+          <button type="button" style={s.button} disabled={savingTracking===o.id} onClick={()=>saveTracking(o)}>{savingTracking===o.id?'SAVING...':'SAVE TRACKING DETAILS'}</button>
+          {o.tracking_number&&o.tracking_url&&<a href={o.tracking_url} target="_blank" rel="noreferrer" style={{marginLeft:12,color:'#0049B7',fontWeight:700}}>OPEN TRACKING PAGE ↗</a>}
+        </div>
+      </article>)}
     </section>}
     {activeTab==='shipping'&&<>
       <section style={s.card}><h2>{shippingForm.id?'Edit Shipping Rate':'Add Country Shipping Rate'}</h2>
@@ -216,7 +244,7 @@ export default function Admin() {
         <label>Reviews count</label><input style={s.input} type="number" min="0" value={form.reviews} onChange={e=>setForm({...form,reviews:e.target.value})}/>
         <label>Product images (select multiple)</label><input style={s.input} type="file" accept="image/*" multiple onChange={e=>setPhotos(Array.from(e.target.files||[]))}/>
         {photos.length>0&&<p>{photos.length} new image(s) selected: {photos.map(f=>f.name).join(', ')}</p>}
-        {form.images?.length>0&&<div style={s.imageGrid}>{form.images.map((url,i)=><div key={`${url}-${i}`} style={s.imageTile}><img src={url} alt={`Product ${i+1}`} style={s.galleryImage}/><small>{i===0?'Main image':`Image ${i+1}`}</small><button type="button" style={s.deleteSmall} onClick={()=>setForm(prev=>({...prev,images:prev.images.filter((_,j)=>j!==i),image:i===0?(prev.images[1]||''):prev.image}))}>REMOVE</button></div>)}</div>}
+        {form.images?.length>0&&<div style={s.imageGrid}>{form.images.map((url,i)=><div key={`${url}-${i}`} style={s.imageTile}><img src={url} alt={`Product ${i+1}`} style={s.galleryImage}/><small>{i===0?'★ Main image':`Image ${i+1}`}</small>{i!==0&&<button type="button" style={s.secondary} onClick={()=>setForm(prev=>{const next=[...prev.images];const [chosen]=next.splice(i,1);next.unshift(chosen);return {...prev,images:next,image:next[0]||''};})}>SET AS MAIN</button>}<button type="button" style={s.deleteSmall} onClick={()=>setForm(prev=>{const next=prev.images.filter((_,j)=>j!==i);return {...prev,images:next,image:next[0]||''};})}>REMOVE</button></div>)}</div>}
         <label><input type="checkbox" checked={form.active} onChange={e=>setForm({...form,active:e.target.checked})}/> Show product on website</label>
         <p><button disabled={saving} style={s.button}>{saving?'SAVING...':'SAVE PRODUCT'}</button><button type="button" style={s.secondary} onClick={()=>{setForm({...blank});setPhotos([]);setMessage('Form cleared.');}}>CLEAR FORM</button></p>
       </form></section>
@@ -227,18 +255,18 @@ export default function Admin() {
 }
 
 const s={
-  page:{maxWidth:'1100px',margin:'25px auto',padding:'16px',fontFamily:'Arial, sans-serif',color:'#222'},
-  header:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'12px'},
-  nav:{display:'flex',gap:'8px',flexWrap:'wrap',margin:'18px 0'},
-  tab:{background:'#eee',color:'#222',padding:'11px 16px',border:0,borderRadius:'22px',cursor:'pointer'},
-  activeTab:{background:'#0049B7',color:'#fff',padding:'11px 16px',border:0,borderRadius:'22px',cursor:'pointer'},
-  card:{background:'#fff',padding:'22px',margin:'20px 0',border:'1px solid #ddd',borderRadius:'10px'},
-  input:{display:'block',width:'100%',boxSizing:'border-box',padding:'12px',margin:'8px 0 16px',border:'1px solid #ccc',borderRadius:'6px'},
-  button:{background:'#0049B7',color:'#fff',padding:'12px 20px',border:0,borderRadius:'25px',cursor:'pointer',margin:'5px'},
-  secondary:{background:'#eee',color:'#222',padding:'10px 15px',border:0,borderRadius:'20px',cursor:'pointer',margin:'5px'},
+  page:{maxWidth:'1240px',margin:'24px auto',padding:'clamp(14px,3vw,30px)',fontFamily:'Inter, Arial, sans-serif',color:'#1e293b'},
+  header:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'12px',padding:'22px 24px',background:'linear-gradient(135deg,#fff 0%,#eef4ff 100%)',border:'1px solid #dbe5f3',borderRadius:'20px',boxShadow:'0 8px 26px rgba(15,23,42,.06)'},
+  nav:{display:'flex',gap:'10px',flexWrap:'wrap',margin:'18px 0',padding:'10px',background:'#e9eef7',borderRadius:'16px'},
+  tab:{background:'transparent',color:'#334155',padding:'12px 18px',border:0,borderRadius:'12px',cursor:'pointer',fontWeight:700},
+  activeTab:{background:'#123b75',color:'#fff',padding:'12px 18px',border:0,borderRadius:'12px',cursor:'pointer',fontWeight:700,boxShadow:'0 5px 14px rgba(18,59,117,.22)'},
+  card:{background:'#fff',padding:'clamp(17px,2.5vw,28px)',margin:'20px 0',border:'1px solid #e2e8f0',borderRadius:'18px',boxShadow:'0 8px 24px rgba(15,23,42,.045)'},
+  input:{display:'block',width:'100%',boxSizing:'border-box',padding:'13px 14px',margin:'7px 0 15px',border:'1px solid #cbd5e1',borderRadius:'10px',background:'#fbfdff',color:'#0f172a',outlineColor:'#2563eb'},
+  button:{background:'#174a8b',color:'#fff',padding:'12px 20px',border:0,borderRadius:'11px',cursor:'pointer',margin:'5px',fontWeight:700},
+  secondary:{background:'#edf2f8',color:'#1e3a5f',padding:'10px 15px',border:0,borderRadius:'10px',cursor:'pointer',margin:'5px',fontWeight:700},
   delete:{background:'#b42318',color:'#fff',padding:'10px 15px',border:0,borderRadius:'20px',cursor:'pointer',margin:'5px'},
   deleteSmall:{background:'#b42318',color:'#fff',padding:'6px 9px',border:0,borderRadius:'14px',cursor:'pointer',fontSize:'11px',marginTop:'5px'},
-  product:{display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap',borderBottom:'1px solid #ddd',padding:'12px 0'},
+  product:{display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap',borderBottom:'1px solid #e8edf4',padding:'16px 0'},
   image:{width:'65px',height:'65px',objectFit:'cover',borderRadius:'6px'},
   galleryImage:{width:'100%',height:'90px',objectFit:'cover',borderRadius:'6px'},
   imageGrid:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:'10px',margin:'10px 0 18px'},
@@ -246,8 +274,8 @@ const s={
   sectionHead:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px',flexWrap:'wrap'},
   stats:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:'12px',margin:'14px 0'},
   stat:{background:'#f7f7f7',padding:'14px',borderRadius:'8px'},
-  order:{border:'1px solid #ddd',borderRadius:'10px',padding:'15px',margin:'15px 0'},
+  order:{border:'1px solid #dbe4f0',borderRadius:'16px',padding:'clamp(14px,2vw,22px)',margin:'16px 0',background:'linear-gradient(180deg,#fff,#fbfdff)'},
   orderItem:{display:'flex',justifyContent:'space-between',gap:'12px',padding:'8px 0',borderBottom:'1px solid #eee',flexWrap:'wrap'},
   statusRow:{display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap',marginTop:'12px'},
-  notice:{background:'#f5f5f5',padding:'10px 12px',borderRadius:'8px'}
+  notice:{background:'#eff6ff',color:'#1e40af',padding:'12px 15px',borderRadius:'10px',border:'1px solid #bfdbfe'},\n  trackingBox:{marginTop:'18px',padding:'16px',border:'1px solid #dbeafe',borderRadius:'14px',background:'#f8fbff'},\n  trackingGrid:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:'8px 14px'}
 };
