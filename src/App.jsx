@@ -84,7 +84,7 @@ export default function App(){
   }
   fetchShipping();return()=>{alive=false;};
  },[selectedAddressId,selectedAddress?.country]);
- const checkoutSubtotal=Number(total||0);
+ const checkoutSubtotal=Number(items.reduce((sum,p)=>sum+(Number(p.price)||0)*Number(p.qty||1),0));
  const shippingAmount=shippingSetting?Number(shippingSetting.shipping_charge||0)*(fxRates[country]||1)/(fxRates[shippingSetting.currency]||1):0;
  const dutyAmount=shippingSetting?checkoutSubtotal*Number(shippingSetting.duty_percent||0)/100:0;
  const freeShippingReached=shippingSetting?.free_shipping_minimum!=null&&checkoutSubtotal>=Number(shippingSetting.free_shipping_minimum||0);
