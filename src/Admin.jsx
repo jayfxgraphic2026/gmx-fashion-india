@@ -6,6 +6,37 @@ const clothingCategories = ['Women', 'Men', 'Muslim Collection'];
 const blank = { id:'', originalName:'', name:'', sku:'', slug:'', category:'Women', subcategory:'', description:'', price:'', stock:0, material:'', origin:'India', image:'', images:[], active:true, rating:'', reviews:0 };
 const blankVariant = { size:'', color:'', sku:'', stock:0, image_url:'' };
 const ORDER_STATUSES = ['Pending','Confirmed','Processing','Shipped','Delivered','Cancelled'];
+
+// Country and currency options for the GMX target markets and commonly used destinations.
+// Selecting a country fills its ISO-2 country code and default currency automatically.
+const COUNTRY_OPTIONS = [
+  ['Argentina','AR','ARS'],['Australia','AU','AUD'],['Austria','AT','EUR'],['Bangladesh','BD','BDT'],['Belgium','BE','EUR'],
+  ['Brazil','BR','BRL'],['Bulgaria','BG','BGN'],['Cambodia','KH','KHR'],['Canada','CA','CAD'],['Chile','CL','CLP'],
+  ['China','CN','CNY'],['Colombia','CO','COP'],['Croatia','HR','EUR'],['Cyprus','CY','EUR'],['Czechia','CZ','CZK'],
+  ['Denmark','DK','DKK'],['Egypt','EG','EGP'],['Estonia','EE','EUR'],['Finland','FI','EUR'],['France','FR','EUR'],
+  ['Germany','DE','EUR'],['Greece','GR','EUR'],['Hong Kong','HK','HKD'],['Hungary','HU','HUF'],['Iceland','IS','ISK'],
+  ['India','IN','INR'],['Indonesia','ID','IDR'],['Ireland','IE','EUR'],['Israel','IL','ILS'],['Italy','IT','EUR'],
+  ['Japan','JP','JPY'],['Kenya','KE','KES'],['Latvia','LV','EUR'],['Lithuania','LT','EUR'],['Luxembourg','LU','EUR'],
+  ['Malaysia','MY','MYR'],['Malta','MT','EUR'],['Mexico','MX','MXN'],['Nepal','NP','NPR'],['Netherlands','NL','EUR'],
+  ['New Zealand','NZ','NZD'],['Nigeria','NG','NGN'],['Norway','NO','NOK'],['Pakistan','PK','PKR'],['Philippines','PH','PHP'],
+  ['Poland','PL','PLN'],['Portugal','PT','EUR'],['Romania','RO','RON'],['Saudi Arabia','SA','SAR'],['Serbia','RS','RSD'],
+  ['Singapore','SG','SGD'],['Slovakia','SK','EUR'],['Slovenia','SI','EUR'],['South Africa','ZA','ZAR'],['South Korea','KR','KRW'],
+  ['Spain','ES','EUR'],['Sri Lanka','LK','LKR'],['Sweden','SE','SEK'],['Switzerland','CH','CHF'],['Thailand','TH','THB'],
+  ['Turkey','TR','TRY'],['Ukraine','UA','UAH'],['United Arab Emirates','AE','AED'],['United Kingdom','GB','GBP'],
+  ['United States','US','USD'],['Vietnam','VN','VND']
+].map(([name, code, currency]) => ({name, code, currency})).sort((a,b)=>a.name.localeCompare(b.name));
+const CURRENCY_OPTIONS = [
+  ['AED','UAE Dirham'],['ARS','Argentine Peso'],['AUD','Australian Dollar'],['BDT','Bangladeshi Taka'],['BGN','Bulgarian Lev'],
+  ['BRL','Brazilian Real'],['CAD','Canadian Dollar'],['CHF','Swiss Franc'],['CLP','Chilean Peso'],['CNY','Chinese Yuan'],
+  ['COP','Colombian Peso'],['CZK','Czech Koruna'],['DKK','Danish Krone'],['EGP','Egyptian Pound'],['EUR','Euro'],
+  ['GBP','British Pound'],['HKD','Hong Kong Dollar'],['HUF','Hungarian Forint'],['IDR','Indonesian Rupiah'],['ILS','Israeli New Shekel'],
+  ['INR','Indian Rupee'],['ISK','Icelandic Krona'],['JPY','Japanese Yen'],['KES','Kenyan Shilling'],['KRW','South Korean Won'],
+  ['KHR','Cambodian Riel'],['LKR','Sri Lankan Rupee'],['MXN','Mexican Peso'],['MYR','Malaysian Ringgit'],['NGN','Nigerian Naira'],
+  ['NOK','Norwegian Krone'],['NPR','Nepalese Rupee'],['NZD','New Zealand Dollar'],['PHP','Philippine Peso'],['PKR','Pakistani Rupee'],
+  ['PLN','Polish Zloty'],['RON','Romanian Leu'],['RSD','Serbian Dinar'],['SAR','Saudi Riyal'],['SEK','Swedish Krona'],
+  ['SGD','Singapore Dollar'],['THB','Thai Baht'],['TRY','Turkish Lira'],['UAH','Ukrainian Hryvnia'],['USD','US Dollar'],
+  ['VND','Vietnamese Dong'],['ZAR','South African Rand']
+].map(([code, name])=>({code,name}));
 const money = (value, currency='USD') => {
   const n = Number(value || 0);
   try { return new Intl.NumberFormat(undefined, { style:'currency', currency:currency || 'USD', maximumFractionDigits:2 }).format(n); }
@@ -130,6 +161,11 @@ export default function Admin() {
     if(error){setShippingMessage('Could not load shipping settings: '+error.message);return;}
     setShippingRates(data||[]);
   }
+  function selectShippingCountry(countryCode){
+    const selected=COUNTRY_OPTIONS.find(c=>c.code===countryCode);
+    if(!selected)return;
+    setShippingForm(prev=>({...prev,country_code:selected.code,country_name:selected.name,currency:selected.currency}));
+  }
   function editShippingRate(rate){
     setShippingForm({id:rate.id,country_code:rate.country_code||'',country_name:rate.country_name||'',currency:rate.currency||'USD',shipping_charge:String(rate.shipping_charge??0),free_shipping_minimum:rate.free_shipping_minimum==null?'':String(rate.free_shipping_minimum),duty_percent:String(rate.duty_percent??0),active:rate.active??true});
     window.scrollTo(0,0);
@@ -213,9 +249,19 @@ export default function Admin() {
     {activeTab==='shipping'&&<>
       <section style={s.card}><h2>{shippingForm.id?'Edit Shipping Rate':'Add Country Shipping Rate'}</h2>
         <form onSubmit={saveShippingRate}>
-          <label>Country Code * (e.g. US, IN, MX)</label><input style={s.input} maxLength={3} value={shippingForm.country_code} onChange={e=>setShippingForm({...shippingForm,country_code:e.target.value})} required />
-          <label>Country Name *</label><input style={s.input} value={shippingForm.country_name} onChange={e=>setShippingForm({...shippingForm,country_name:e.target.value})} required />
-          <label>Currency Code *</label><input style={s.input} maxLength={3} value={shippingForm.currency} onChange={e=>setShippingForm({...shippingForm,currency:e.target.value})} required />
+          <label>Select Country *</label>
+          <select style={s.input} value={shippingForm.country_code} onChange={e=>selectShippingCountry(e.target.value)} required>
+            <option value="">Choose a country...</option>
+            {COUNTRY_OPTIONS.map(country=><option key={country.code} value={country.code}>{country.name} ({country.code})</option>)}
+          </select>
+          <label>Country Code *</label>
+          <input style={s.input} value={shippingForm.country_code} readOnly required placeholder="Auto-filled from country" />
+          <label>Country Name *</label>
+          <input style={s.input} value={shippingForm.country_name} readOnly required placeholder="Auto-filled from country" />
+          <label>Currency Code *</label>
+          <select style={s.input} value={shippingForm.currency} onChange={e=>setShippingForm({...shippingForm,currency:e.target.value})} required>
+            {CURRENCY_OPTIONS.map(currency=><option key={currency.code} value={currency.code}>{currency.code} — {currency.name}</option>)}
+          </select>
           <label>Shipping Charge</label><input style={s.input} type="number" min="0" step="0.01" value={shippingForm.shipping_charge} onChange={e=>setShippingForm({...shippingForm,shipping_charge:e.target.value})} required />
           <label>Free Shipping Minimum (leave blank to disable)</label><input style={s.input} type="number" min="0" step="0.01" value={shippingForm.free_shipping_minimum} onChange={e=>setShippingForm({...shippingForm,free_shipping_minimum:e.target.value})} />
           <label>Import Duty Percentage (%)</label><input style={s.input} type="number" min="0" max="100" step="0.01" value={shippingForm.duty_percent} onChange={e=>setShippingForm({...shippingForm,duty_percent:e.target.value})} />
