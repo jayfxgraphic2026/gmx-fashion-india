@@ -1,4 +1,4 @@
-import React,{useEffect,useMemo,useState} from 'react';
+import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {Search,ShoppingBag,Heart,User,Menu,Globe,ChevronDown,Plus,Minus,X,ArrowRight,Star,Truck,ShieldCheck,Package,Share2,MessageCircle,SlidersHorizontal,Check,MapPin,Mail} from 'lucide-react';
 import seed from './catalog.json';
 import { supabase } from './supabase';
@@ -6,6 +6,7 @@ const countries=[['United States','USD','$'],['Canada','CAD','CA$'],['Mexico','M
 const cats=['All Collections','Women','Men','Muslim Collection','Jewellery','Puja & Spiritual','Handicrafts','Leather','Perfumes','Incense'];
 const money=(n,c)=>{let rates={USD:1,CAD:1.39,MXN:17.2,GBP:.79,EUR:.92,RSD:108,INR:83.2};let symbols={USD:'$',CAD:'CA$',MXN:'MX$',GBP:'£',EUR:'€',RSD:'дин ',INR:'₹'};return symbols[c]+(n*rates[c]).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})};
 export default function App(){
+ const noticeTimer=useRef(null);
  const[catalog,setCatalog]=useState(seed);
  useEffect(()=>{let alive=true;async function loadProducts(){const {data,error}=await supabase.from('products').select('*').eq('active',true).order('created_at',{ascending:false});if(!alive)return;if(!error&&Array.isArray(data)&&data.length){const normalized=data.map(p=>({...p,image:p.image||p.images?.[0]||'',rating:p.rating??0,reviews:p.reviews??0,subcategory:p.subcategory||'',description:p.description||'',origin:p.origin||'India',stock:p.stock??0}));setCatalog(normalized);}else if(error){console.error('Supabase product load failed:',error.message);}setCatalogLoading(false);}loadProducts();return()=>{alive=false};},[]);
  const[catalogLoading,setCatalogLoading]=useState(true);
@@ -85,8 +86,8 @@ export default function App(){
      options:{data:{full_name:authName.trim()}}
     });
     if(error)throw error;
-    if(data?.session){setAuthUser(data.user);setAuthMessage('Account created successfully.');}
-    else{setAuthMessage('Registration received. Please check your email for the confirmation link, then log in.');setAuthMode('login');}
+    if(data?.session){setAuthUser(data.user);setAuthMessage('Account created successfully.');showNotice('Account successfully created!');}
+    else{setAuthMessage('Registration received. Please check your email for the confirmation link, then log in.');showNotice('Account created! Please verify your email.');setAuthMode('login');}
    }else{
     const {data,error}=await supabase.auth.signInWithPassword({email:authEmail.trim(),password:authPassword});
     if(error)throw error;
@@ -102,8 +103,9 @@ export default function App(){
  }
  const products=useMemo(()=>catalog.filter(p=>(cat==='All Collections'||p.category===cat)&&(`${p.name} ${p.category} ${p.subcategory}`).toLowerCase().includes(search.toLowerCase())).sort((a,b)=>sort==='Price: Low to High'?(Number(a.price)||0)-(Number(b.price)||0):sort==='Price: High to Low'?(Number(b.price)||0)-(Number(a.price)||0):0),[catalog,cat,search,sort]);
  const count=items.reduce((s,p)=>s+p.qty,0),total=items.reduce((s,p)=>s+(Number(p.price)||0)*p.qty,0);const chosenVariant=activeVariants.find(v=>v.size===selectedSize&&v.color===selectedColor);const sizeOptions=[...new Set(activeVariants.map(v=>v.size).filter(Boolean))];const colorOptions=[...new Set(activeVariants.filter(v=>!selectedSize||v.size===selectedSize).map(v=>v.color).filter(Boolean))];
- function persistCart(v){setItems(v);localStorage.gmxCart=JSON.stringify(v)} function add(p,q=1,variant=null){let old=[...items],key=variant?.id||'base',idx=old.findIndex(x=>x.id===p.id&&(x.variantId||'base')===key);if(idx>=0)old[idx].qty+=q;else old.push({...p,qty:q,variantId:variant?.id||null,variantSize:variant?.size||'',variantColor:variant?.color||'',variantSku:variant?.sku||'',variantStock:variant?.stock??null,variantImage:variant?.image_url||''});persistCart(old);setNotice('Added to your bag');setTimeout(()=>setNotice(''),2200)}
- function toggleWish(p){let v=wish.includes(p.id)?wish.filter(x=>x!==p.id):[...wish,p.id];setWish(v);localStorage.gmxWish=JSON.stringify(v)}
+ function showNotice(message){setNotice(message);window.clearTimeout(noticeTimer.current);noticeTimer.current=window.setTimeout(()=>setNotice(''),2600)}
+ function persistCart(v){setItems(v);localStorage.gmxCart=JSON.stringify(v)} function add(p,q=1,variant=null){let old=[...items],key=variant?.id||'base',idx=old.findIndex(x=>x.id===p.id&&(x.variantId||'base')===key);if(idx>=0)old[idx].qty+=q;else old.push({...p,qty:q,variantId:variant?.id||null,variantSize:variant?.size||'',variantColor:variant?.color||'',variantSku:variant?.sku||'',variantStock:variant?.stock??null,variantImage:variant?.image_url||''});persistCart(old);showNotice('Added to your bag')}
+ function toggleWish(p){const alreadySaved=wish.includes(p.id);let v=alreadySaved?wish.filter(x=>x!==p.id):[...wish,p.id];setWish(v);localStorage.gmxWish=JSON.stringify(v);showNotice(alreadySaved?'Removed from wishlist':'Added to wishlist')}
  async function openProduct(p){setActive(p);setQty(1);setActiveVariants([]);setSelectedSize('');setSelectedColor('');if(['Women','Men','Muslim Collection'].includes(p.category)){setVariantLoading(true);const {data,error}=await supabase.from('product_variants').select('*').eq('product_id',p.id).eq('active',true).order('size');if(!error&&Array.isArray(data)){setActiveVariants(data);if(data.length){setSelectedSize(data[0].size);setSelectedColor(data[0].color);}}else if(error){console.error('Variant load failed:',error.message);setNotice('Size & Colour options could not be loaded.');}setVariantLoading(false);}}
  const wa='https://wa.me/916239686493';
  const cards=(list)=> <div className="product-grid">{list.map(p=><article className="product-card" key={p.id}><button className={'wish '+(wish.includes(p.id)?'selected':'')} onClick={()=>toggleWish(p)} aria-label="Wishlist"><Heart size={19} fill={wish.includes(p.id)?'currentColor':'none'}/></button><button className="photo" onClick={()=>openProduct(p)}><img src={p.image} alt={p.name}/><span className="quick">QUICK VIEW</span></button><div className="p-info"><small>{p.category}</small><button className="p-name" onClick={()=>openProduct(p)}>{p.name}</button><div className="rating"><Star size={13} fill="currentColor"/> {p.rating} <span>({p.reviews} reviews)</span></div><strong>{money(p.price,country)}</strong><div className="card-actions"><button className="outline" onClick={()=>add(p)}>ADD TO CART</button><button className="solid" onClick={()=>{add(p);setCartOpen(true)}}>BUY NOW</button></div></div></article>)}</div>;
