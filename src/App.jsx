@@ -229,6 +229,13 @@ export default function App(){
         <div style={{display:'flex',justifyContent:'space-between',gap:'12px',flexWrap:'wrap'}}><b>{o.order_number||'Order'}</b><span style={{border:'1px solid #d8c7ae',borderRadius:'20px',padding:'4px 10px',fontSize:'12px'}}>{o.status||'Pending'}</span></div>
         <p style={{margin:'8px 0'}}>Date: {o.created_at?new Date(o.created_at).toLocaleString():'—'} · Total: {new Intl.NumberFormat(undefined,{style:'currency',currency:o.currency||country}).format(Number(o.total)||0)}</p>
         {(orderItemsById[o.id]||[]).map(line=><p key={line.id} style={{margin:'5px 0',fontSize:'14px'}}>{line.product_name} × {line.quantity}{line.variant_size||line.variant_color?` · ${line.variant_size||''} ${line.variant_color||''}`:''}</p>)}
+        {(o.courier_name||o.tracking_number||o.tracking_url||o.shipped_at)&&<div style={{marginTop:'12px',padding:'13px',border:'1px solid #dbeafe',borderRadius:'10px',background:'#f8fbff'}}>
+         <b style={{display:'block',marginBottom:'8px'}}>Shipment & Tracking</b>
+         {o.courier_name&&<p style={{margin:'4px 0'}}>Courier: <b>{o.courier_name}</b></p>}
+         {o.tracking_number&&<p style={{margin:'4px 0'}}>Tracking Number: <b>{o.tracking_number}</b></p>}
+         {o.shipped_at&&<p style={{margin:'4px 0'}}>Dispatch Date: {new Date(o.shipped_at).toLocaleDateString()}</p>}
+         {o.tracking_url&&/^https?:\/\//i.test(o.tracking_url)&&<a href={o.tracking_url} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',marginTop:'8px',padding:'9px 14px',borderRadius:'20px',background:'#174ea6',color:'#fff',textDecoration:'none'}}>TRACK SHIPMENT ↗</a>}
+        </div>}
         <details style={{marginTop:'9px'}}><summary style={{cursor:'pointer'}}>Delivery address</summary><p>{typeof o.shipping_address==='object'&&o.shipping_address?`${o.shipping_address.recipient_name||''}, ${o.shipping_address.address_line1||''} ${o.shipping_address.address_line2||''}, ${o.shipping_address.city||''}, ${o.shipping_address.state||''} ${o.shipping_address.postal_code||''}, ${o.shipping_address.country||''}`:String(o.shipping_address||'')}</p></details>
        </div>)}</div>}
       </div>
