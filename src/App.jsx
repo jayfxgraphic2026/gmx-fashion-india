@@ -18,7 +18,9 @@ export default function App(){
  [customerProfile,setCustomerProfile]=useState({full_name:'',phone:''}),
  [profileBusy,setProfileBusy]=useState(false),[addresses,setAddresses]=useState([]),
  [addressForm,setAddressForm]=useState({label:'Home',recipient_name:'',phone:'',address_line1:'',address_line2:'',city:'',state:'',postal_code:'',country:'India',is_default:false}),
- [editingAddressId,setEditingAddressId]=useState(null),[addressFormOpen,setAddressFormOpen]=useState(false),[addressBusy,setAddressBusy]=useState(false);
+ [editingAddressId,setEditingAddressId]=useState(null),[addressFormOpen,setAddressFormOpen]=useState(false),[addressBusy,setAddressBusy]=useState(false),
+ [orderHistory,setOrderHistory]=useState([]),[orderItemsById,setOrderItemsById]=useState({}),[ordersBusy,setOrdersBusy]=useState(false),
+ [selectedAddressId,setSelectedAddressId]=useState(''),[orderBusy,setOrderBusy]=useState(false),[lastPlacedOrder,setLastPlacedOrder]=useState(null);
  useEffect(()=>{
   let mounted=true;
   supabase.auth.getSession().then(({data})=>{if(mounted)setAuthUser(data?.session?.user||null);});
@@ -42,6 +44,63 @@ export default function App(){
   loadCustomerData();
   return()=>{alive=false;};
  },[authUser]);
+ useEffect(()=>{
+  let alive=true;
+  async function loadOrderHistory(){
+   if(!authUser){setOrderHistory([]);setOrderItemsById({});return;}
+   setOrdersBusy(true);
+   const {data,error}=await supabase.from('orders').select('*').eq('user_id',authUser.id).order('created_at',{ascending:false});
+   if(!alive)return;
+   if(error){showNotice('Order history could not be loaded: '+error.message);setOrderHistory([]);setOrderItemsById({});setOrdersBusy(false);return;}
+   const rows=data||[];setOrderHistory(rows);
+   if(rows.length){
+    const {data:lineRows,error:lineError}=await supabase.from('order_items').select('*').in('order_id',rows.map(o=>o.id));
+    if(!alive)return;
+    if(lineError)showNotice('Order items could not be loaded: '+lineError.message);
+    else{const grouped={};(lineRows||[]).forEach(line=>{(grouped[line.order_id] ||= []).push(line);});setOrderItemsById(grouped);}
+   }else setOrderItemsById({});
+   setOrdersBusy(false);
+  }
+  loadOrderHistory();
+  return()=>{alive=false;};
+ },[authUser]);
+ function openCheckout(){
+  if(!authUser){setCartOpen(false);setPage('account');showNotice('Please log in or create an account before checkout.');return;}
+  if(!items.length){showNotice('Your bag is empty.');return;}
+  const preferred=addresses.find(a=>a.is_default)||addresses[0];
+  if(!preferred){setCartOpen(false);setPage('account');showNotice('Please add a delivery address before checkout.');return;}
+  setSelectedAddressId(preferred.id);setCartOpen(false);setPage('checkout');
+ }
+ async function placeCustomerOrder(){
+  if(!authUser){setPage('account');showNotice('Please log in before placing your order.');return;}
+  if(!items.length){showNotice('Your bag is empty.');return;}
+  const address=addresses.find(a=>String(a.id)===String(selectedAddressId));
+  if(!address){showNotice('Please select a delivery address.');return;}
+  if(items.some(p=>!Number.isFinite(Number(p.price))||Number(p.price)<=0)){showNotice('A product has no confirmed price. Please contact our team before ordering.');return;}
+  setOrderBusy(true);
+  try{
+   const rates={USD:1,CAD:1.39,MXN:17.2,GBP:.79,EUR:.92,RSD:108,INR:83.2};
+   const rate=rates[country]||1;
+   const subtotal=Number((items.reduce((sum,p)=>sum+(Number(p.price)||0)*Number(p.qty||1),0)*rate).toFixed(2));
+   const shipping=0,tax=0,total=Number((subtotal+shipping+tax).toFixed(2));
+   const countryName=(countries.find(c=>c[1]===country)||[])[0]||address.country;
+   const orderNumber='GMX-'+new Date().toISOString().replace(/[-:T.Z]/g,'').slice(0,14)+'-'+Math.random().toString(36).slice(2,6).toUpperCase();
+   const shippingAddress={label:address.label||'Delivery',recipient_name:address.recipient_name,phone:address.phone,address_line1:address.address_line1,address_line2:address.address_line2||'',city:address.city,state:address.state,postal_code:address.postal_code,country:address.country};
+   const orderPayload={order_number:orderNumber,status:'Pending',customer_email:authUser.email||'',country:countryName,currency:country,subtotal,shipping,tax,total,shipping_address:shippingAddress,user_id:authUser.id};
+   const {data:createdOrder,error:orderError}=await supabase.from('orders').insert(orderPayload).select('id,order_number,status,created_at,total,currency').single();
+   if(orderError)throw orderError;
+   const orderLines=items.map(p=>({order_id:createdOrder.id,product_id:p.id,product_name:p.name,quantity:Number(p.qty||1),unit_price:Number((Number(p.price)*rate).toFixed(2)),variant_id:p.variantId||null,variant_size:p.variantSize||null,variant_color:p.variantColor||null,variant_sku:p.variantSku||null}));
+   const {error:itemsError}=await supabase.from('order_items').insert(orderLines);
+   if(itemsError){await supabase.from('orders').delete().eq('id',createdOrder.id).eq('user_id',authUser.id);throw itemsError;}
+   const confirmed={...createdOrder,order_number:createdOrder.order_number||orderNumber,status:'Pending',total,currency:country,shipping_address:shippingAddress};
+   setLastPlacedOrder(confirmed);setItems([]);localStorage.gmxCart='';setPage('order-success');showNotice('Your order has been placed successfully!');
+   const {data:updatedOrders}=await supabase.from('orders').select('*').eq('user_id',authUser.id).order('created_at',{ascending:false});
+   if(updatedOrders)setOrderHistory(updatedOrders);
+   const {data:updatedLines}=await supabase.from('order_items').select('*').eq('order_id',createdOrder.id);
+   if(updatedLines)setOrderItemsById(prev=>({...prev,[createdOrder.id]:updatedLines}));
+  }catch(error){console.error('Order placement failed:',error);showNotice('Order could not be placed: '+(error?.message||'Please try again.'));}
+  finally{setOrderBusy(false);}
+ }
  async function saveCustomerProfile(e){
   e.preventDefault();if(!authUser)return;setProfileBusy(true);setAuthMessage('');
   const {error}=await supabase.from('customer_profiles').upsert({user_id:authUser.id,full_name:customerProfile.full_name.trim(),phone:customerProfile.phone.trim(),updated_at:new Date().toISOString()},{onConflict:'user_id'});
@@ -124,6 +183,32 @@ export default function App(){
  <section className="directors"><label>LEADERSHIP · GMX FASHION INDIA</label><div className="ticker"><div>{['Gurpreet Singh','Harvinder Singh','Jaspal Kaur','Upneet Kaur','Navneet Kaur', 'Gurpreet Singh','Harvinder Singh','Jaspal Kaur','Upneet Kaur','Navneet Kaur'].map(n=><span>{n} <i>✦</i></span>)}</div></div></section></>}
  {page==='shop'&&<section className="section shop-page"><div className="crumb">HOME / SHOP / {cat.toUpperCase()}</div><div className="section-head"><div><label>THE GMX COLLECTIONS</label><h2>{cat==='All Collections'?'Shop all':cat} <i>edit</i></h2><p className="muted">{products.length} curated products</p></div><select className="sort" value={sort} onChange={e=>setSort(e.target.value)}><option>Featured</option><option>Price: Low to High</option><option>Price: High to Low</option></select></div><div className="shop-layout"><aside><b>SHOP CATEGORIES</b>{cats.map(c=><button className={cat===c?'chosen':''} onClick={()=>setCat(c)}>{c}</button>)}<hr/><b>COLLECTION NOTES</b><p>Product details and availability are confirmed at checkout. Contact us for bulk quantities.</p></aside><div>{catalogLoading?<p>Loading collection...</p>:products.length?cards(products):<p>No products match this search. Try another term.</p>}</div></div></section>}
  {page==='wishlist'&&<section className="section"><div className="section-head"><div><label>SAVED FOR LATER</label><h2>Your <i>wishlist</i></h2></div></div>{cards(catalog.filter(p=>wish.includes(p.id)))}</section>}
+ {page==='checkout'&&<section className="section form-page">
+  <div className="crumb">HOME / BAG / CHECKOUT</div><label>SECURE ORDER DETAILS</label><h2>Complete your <i>order.</i></h2>
+  <div style={{maxWidth:'900px',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:'22px',marginTop:'22px'}}>
+   <div className="contact-card"><h3>Delivery address</h3>
+    {addresses.length===0?<p>No saved address. Please add one in your Account.</p>:<div style={{display:'grid',gap:'12px'}}>{addresses.map(a=><label key={a.id} style={{display:'flex',gap:'10px',alignItems:'flex-start',border:'1px solid #e8e0d8',borderRadius:'9px',padding:'12px',cursor:'pointer'}}><input type="radio" name="checkout-address" checked={String(selectedAddressId)===String(a.id)} onChange={()=>setSelectedAddressId(a.id)}/><span><b>{a.label}{a.is_default?' · DEFAULT':''}</b><br/>{a.recipient_name} · {a.phone}<br/>{a.address_line1}{a.address_line2?', '+a.address_line2:''}, {a.city}, {a.state} {a.postal_code}, {a.country}</span></label>)}</div>}
+    <button className="outline" style={{marginTop:'14px'}} onClick={()=>setPage('account')}>MANAGE ADDRESSES</button>
+   </div>
+   <div className="contact-card"><h3>Order summary</h3>
+    {items.map((p,i)=><div key={`${p.id}-${p.variantId||'base'}-${i}`} style={{display:'flex',justifyContent:'space-between',gap:'12px',padding:'9px 0',borderBottom:'1px solid #eee'}}><span>{p.name} × {p.qty}<small style={{display:'block'}}>{p.variantSize||p.variantColor?`Size: ${p.variantSize||'—'} · Colour: ${p.variantColor||'—'}`:''}</small></span><b>{money(Number(p.price)*p.qty,country)}</b></div>)}
+    <p style={{display:'flex',justifyContent:'space-between'}}><span>Subtotal</span><b>{money(total,country)}</b></p>
+    <p style={{display:'flex',justifyContent:'space-between'}}><span>Shipping</span><b>To be confirmed · 0.00</b></p>
+    <p style={{display:'flex',justifyContent:'space-between'}}><span>Tax</span><b>To be confirmed · 0.00</b></p>
+    <p style={{display:'flex',justifyContent:'space-between',fontSize:'18px',borderTop:'1px solid #ddd',paddingTop:'12px'}}><b>Estimated total</b><b>{money(total,country)}</b></p>
+    <p className="muted">Payment is not collected online at this stage. Your order will be placed with Pending status. Shipping charges, duties and taxes must be confirmed by the GMX team.</p>
+    <button className="solid full" disabled={orderBusy||!items.length||!selectedAddressId} onClick={placeCustomerOrder}>{orderBusy?'PLACING ORDER...':'CONFIRM ORDER · PAY LATER'}</button>
+   </div>
+  </div>
+  <button className="text-link" style={{marginTop:'20px'}} onClick={()=>{setPage('home');setCartOpen(true)}}>← BACK TO SHOPPING BAG</button>
+ </section>}
+ {page==='order-success'&&<section className="section form-page" style={{textAlign:'center',maxWidth:'760px',margin:'0 auto'}}>
+  <div style={{fontSize:'48px',color:'#267a4b'}}>✓</div><label>ORDER RECEIVED</label><h2>Your order is <i>confirmed.</i></h2>
+  <p>Thank you for shopping with GMX FASHION INDIA. Your order has been saved and is currently awaiting processing.</p>
+  {lastPlacedOrder&&<div className="contact-card" style={{textAlign:'left',margin:'24px auto',maxWidth:'520px'}}><p><b>Order number:</b> {lastPlacedOrder.order_number}</p><p><b>Status:</b> Pending</p><p><b>Total:</b> {new Intl.NumberFormat(undefined,{style:'currency',currency:lastPlacedOrder.currency||country}).format(Number(lastPlacedOrder.total)||0)}</p></div>}
+  <p className="muted">Our team will confirm shipping charges, duties, taxes and payment arrangements separately.</p>
+  <button className="solid" onClick={()=>setPage('account')}>VIEW MY ORDERS</button> <button className="outline" onClick={()=>{setPage('shop');setCat('All Collections')}}>CONTINUE SHOPPING</button>
+ </section>}
  {page==='wholesale'&&<section className="section form-page"><label>GLOBAL SOURCING · WHOLESALE & EXPORT</label><h2>Become our international<br/><i>business partner.</i></h2><p>Partner with GMX FASHION INDIA to source authentic Indian fashion, spiritual products, traditional accessories and lifestyle collections for your market.</p><form onSubmit={e=>{e.preventDefault();setNotice('Thank you. Your enquiry has been prepared. Please send it to our team on WhatsApp.');}}><div className="form-grid">{['Full Name','Company Name','Country','Email','WhatsApp Number','Product Category','Required Quantity'].map((x,i)=><label>{x}<input required={i===0||i===3} placeholder={x}/></label>)}</div><label>Message<textarea placeholder="Tell us about the products and quantities you are interested in."/></label><button className="solid">SUBMIT ENQUIRY <ArrowRight/></button><a className="wa-inline" href={wa} target="_blank">OR CHAT WITH OUR TEAM ON WHATSAPP</a></form></section>}
  {page==='contact'&&<section className="section form-page"><label>WE'D LOVE TO HEAR FROM YOU</label><h2>Let's <i>connect.</i></h2><p>For product questions, order support and international business enquiries.</p><div className="contact-card"><h3>GMX FASHION INDIA</h3><p>91, Village Kandala, District Mohali, Punjab, India – 140306</p><p>WhatsApp: +91 62396 86493</p><a href={wa} target="_blank" className="solid">CHAT ON WHATSAPP</a></div></section>}
  {page==='account'&&<section className="section form-page">
@@ -137,7 +222,15 @@ export default function App(){
       <label>Mobile Number<input type="tel" value={customerProfile.phone} onChange={e=>setCustomerProfile(v=>({...v,phone:e.target.value}))} placeholder="Country code + mobile number" required autoComplete="tel"/></label>
       <button className="solid" type="submit" disabled={profileBusy}>{profileBusy?'SAVING...':'SAVE PROFILE'}</button>
      </form>
-     <p style={{marginTop:'18px'}}>Order history will appear here after the order table and checkout flow are connected.</p>
+     <div style={{marginTop:'22px',paddingTop:'18px',borderTop:'1px solid #e8e0d8'}}>
+       <h3>My Orders</h3>
+       {ordersBusy?<p>Loading your orders...</p>:orderHistory.length===0?<p>You have not placed any orders yet.</p>:<div style={{display:'grid',gap:'14px',marginTop:'14px'}}>{orderHistory.map(o=><div key={o.id} style={{border:'1px solid #e8e0d8',borderRadius:'10px',padding:'15px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',gap:'12px',flexWrap:'wrap'}}><b>{o.order_number||'Order'}</b><span style={{border:'1px solid #d8c7ae',borderRadius:'20px',padding:'4px 10px',fontSize:'12px'}}>{o.status||'Pending'}</span></div>
+        <p style={{margin:'8px 0'}}>Date: {o.created_at?new Date(o.created_at).toLocaleString():'—'} · Total: {new Intl.NumberFormat(undefined,{style:'currency',currency:o.currency||country}).format(Number(o.total)||0)}</p>
+        {(orderItemsById[o.id]||[]).map(line=><p key={line.id} style={{margin:'5px 0',fontSize:'14px'}}>{line.product_name} × {line.quantity}{line.variant_size||line.variant_color?` · ${line.variant_size||''} ${line.variant_color||''}`:''}</p>)}
+        <details style={{marginTop:'9px'}}><summary style={{cursor:'pointer'}}>Delivery address</summary><p>{typeof o.shipping_address==='object'&&o.shipping_address?`${o.shipping_address.recipient_name||''}, ${o.shipping_address.address_line1||''} ${o.shipping_address.address_line2||''}, ${o.shipping_address.city||''}, ${o.shipping_address.state||''} ${o.shipping_address.postal_code||''}, ${o.shipping_address.country||''}`:String(o.shipping_address||'')}</p></details>
+       </div>)}</div>}
+      </div>
      <button className="outline" onClick={()=>setCartOpen(true)}>VIEW MY BAG</button>
      <button className="outline full" style={{marginTop:'12px'}} onClick={customerLogout}>LOG OUT</button>
     </div>
@@ -175,7 +268,7 @@ export default function App(){
   </section>}
  <footer><div className="footer-main"><div className="footer-brand"><span className="brand-mark">GMX</span><h3>FASHION INDIA</h3><p>Bringing India's Heritage & Fashion to the World.</p><a href={wa} target="_blank">WHATSAPP: +91 62396 86493</a></div><div><b>EXPLORE</b>{cats.slice(1,6).map(c=><button onClick={()=>{setCat(c);setPage('shop')}}>{c}</button>)}</div><div><b>CUSTOMER CARE</b>{['Track My Order','Shipping Policy','Returns & Refunds','Privacy Policy','Terms & Conditions'].map(c=><button onClick={()=>setNotice('This policy page will be published with verified business details.')}>{c}</button>)}</div><div><b>BUSINESS</b><button onClick={()=>setPage('wholesale')}>Wholesale & Export</button><button onClick={()=>setPage('wholesale')}>Become a Distributor</button><button onClick={()=>setPage('contact')}>Contact Us</button><p>91, Village Kandala,<br/>District Mohali, Punjab 140306, India</p></div></div><div className="footer-bottom"><span>© 2026 GMX FASHION INDIA. ALL RIGHTS RESERVED.</span><span>MADE WITH CARE IN INDIA ✦</span></div></footer>
  <a className="whatsapp" href={wa} target="_blank" aria-label="WhatsApp"><MessageCircle/> <span>Chat with us</span></a>
- {cartOpen&&<div className="overlay" onClick={()=>setCartOpen(false)}><aside className="cart-drawer" onClick={e=>e.stopPropagation()}><div className="drawer-head"><h2>Your bag <small>({count} items)</small></h2><button onClick={()=>setCartOpen(false)}><X/></button></div>{items.length? <>{items.map(p=><div className="cart-line"><img src={p.variantImage||p.image}/><div><b>{p.name}</b>{(p.variantSize||p.variantColor)&&<small style={{display:'block',margin:'4px 0'}}>Size: {p.variantSize||'—'} · Colour: {p.variantColor||'—'}</small>}<strong>{Number(p.price)>0?money(Number(p.price),country):'Price on request'}</strong><div className="qty"><button onClick={()=>persistCart(items.map(x=>x.id===p.id&&(x.variantId||'base')===(p.variantId||'base')?{...x,qty:Math.max(1,x.qty-1)}:x))}><Minus size={13}/></button>{p.qty}<button onClick={()=>persistCart(items.map(x=>x.id===p.id&&(x.variantId||'base')===(p.variantId||'base')?{...x,qty:x.qty+1}:x))}><Plus size={13}/></button><button className="remove" onClick={()=>persistCart(items.filter(x=>!(x.id===p.id&&(x.variantId||'base')===(p.variantId||'base'))))}>Remove</button></div></div></div>)}<div className="cart-total"><span>Subtotal · indicative</span><b>{money(total,country)}</b></div><p className="muted">Shipping, duties and applicable taxes are calculated after destination and shipping method are confirmed.</p><button className="solid full" onClick={()=>setNotice('Checkout integration is not active yet. Configure a merchant gateway and shipping rules before accepting payments.')}>CONTINUE TO CHECKOUT</button></>:<div className="empty"><ShoppingBag size={36}/><h3>Your bag is waiting</h3><p>Explore the collection and add something special.</p><button className="solid" onClick={()=>{setCartOpen(false);setPage('shop')}}>START SHOPPING</button></div>}</aside></div>}
+ {cartOpen&&<div className="overlay" onClick={()=>setCartOpen(false)}><aside className="cart-drawer" onClick={e=>e.stopPropagation()}><div className="drawer-head"><h2>Your bag <small>({count} items)</small></h2><button onClick={()=>setCartOpen(false)}><X/></button></div>{items.length? <>{items.map(p=><div className="cart-line"><img src={p.variantImage||p.image}/><div><b>{p.name}</b>{(p.variantSize||p.variantColor)&&<small style={{display:'block',margin:'4px 0'}}>Size: {p.variantSize||'—'} · Colour: {p.variantColor||'—'}</small>}<strong>{Number(p.price)>0?money(Number(p.price),country):'Price on request'}</strong><div className="qty"><button onClick={()=>persistCart(items.map(x=>x.id===p.id&&(x.variantId||'base')===(p.variantId||'base')?{...x,qty:Math.max(1,x.qty-1)}:x))}><Minus size={13}/></button>{p.qty}<button onClick={()=>persistCart(items.map(x=>x.id===p.id&&(x.variantId||'base')===(p.variantId||'base')?{...x,qty:x.qty+1}:x))}><Plus size={13}/></button><button className="remove" onClick={()=>persistCart(items.filter(x=>!(x.id===p.id&&(x.variantId||'base')===(p.variantId||'base'))))}>Remove</button></div></div></div>)}<div className="cart-total"><span>Subtotal · indicative</span><b>{money(total,country)}</b></div><p className="muted">Shipping, duties and applicable taxes are calculated after destination and shipping method are confirmed.</p><button className="solid full" onClick={openCheckout}>CONTINUE TO CHECKOUT</button></>:<div className="empty"><ShoppingBag size={36}/><h3>Your bag is waiting</h3><p>Explore the collection and add something special.</p><button className="solid" onClick={()=>{setCartOpen(false);setPage('shop')}}>START SHOPPING</button></div>}</aside></div>}
  {active&&<div className="overlay" onClick={()=>setActive(null)}><div className="product-modal" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={()=>setActive(null)}><X/></button><img src={active.image}/><div><label>{active.category}</label><h2>{active.name}</h2><div className="rating"><Star fill="currentColor"/> {active.rating} · {active.reviews} reviews</div><h3>{Number(active.price)>0?money(Number(active.price),country):'Price on request'}</h3><p>{active.description}</p><p><b>Origin:</b> {active.origin}</p>{['Women','Men','Muslim Collection'].includes(active.category)&&<div className="variant-picker" style={{margin:'18px 0',padding:'14px',border:'1px solid #e8e0d8',borderRadius:'10px'}}><b style={{display:'block',marginBottom:'8px'}}>SIZE & COLOUR</b>{variantLoading?<p>Loading available sizes and colours...</p>:activeVariants.length===0?<p>Size and colour options are not available for this product yet. Please contact us.</p>:<><label style={{display:'block',margin:'8px 0 5px'}}>Size</label><select value={selectedSize} onChange={e=>{setSelectedSize(e.target.value);const next=activeVariants.find(v=>v.size===e.target.value);if(next)setSelectedColor(next.color)}} style={{width:'100%',padding:'11px',border:'1px solid #ddd',borderRadius:'6px'}}>{sizeOptions.map(v=><option key={v} value={v}>{v}</option>)}</select><label style={{display:'block',margin:'10px 0 5px'}}>Colour</label><select value={selectedColor} onChange={e=>setSelectedColor(e.target.value)} style={{width:'100%',padding:'11px',border:'1px solid #ddd',borderRadius:'6px'}}>{colorOptions.map(v=><option key={v} value={v}>{v}</option>)}</select><p style={{marginTop:'10px'}}><b>Variant stock:</b> {chosenVariant?.stock??0}{chosenVariant?.sku?<> · <b>SKU:</b> {chosenVariant.sku}</>:null}</p></>}</div>}<p><b>Stock status:</b> {chosenVariant? (chosenVariant.stock>0?'Available':'Out of stock'):(active.stock>0?'Available – subject to confirmation':'Contact us')}</p><div className="qty big"><button onClick={()=>setQty(Math.max(1,qty-1))}><Minus/></button>{qty}<button onClick={()=>setQty(qty+1)}><Plus/></button></div><button className="solid full" disabled={variantLoading||(['Women','Men','Muslim Collection'].includes(active.category)&&(!chosenVariant||chosenVariant.stock<1))} onClick={()=>{add(active,qty,chosenVariant||null);setActive(null)}}>ADD TO CART</button><button className="outline full" onClick={()=>toggleWish(active)}>♡ ADD TO WISHLIST</button><button className="text-link" onClick={()=>navigator.share?.({title:active.name,text:active.description,url:location.href})}>SHARE PRODUCT ↗</button></div></div></div>}
  {notice&&<div className="toast">{notice}</div>}
  </div>
