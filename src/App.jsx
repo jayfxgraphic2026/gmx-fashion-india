@@ -20,7 +20,7 @@ export default function App(){
  [addressForm,setAddressForm]=useState({label:'Home',recipient_name:'',phone:'',address_line1:'',address_line2:'',city:'',state:'',postal_code:'',country:'India',is_default:false}),
  [editingAddressId,setEditingAddressId]=useState(null),[addressFormOpen,setAddressFormOpen]=useState(false),[addressBusy,setAddressBusy]=useState(false),
  [orderHistory,setOrderHistory]=useState([]),[orderItemsById,setOrderItemsById]=useState({}),[ordersBusy,setOrdersBusy]=useState(false),
- [selectedAddressId,setSelectedAddressId]=useState(''),[orderBusy,setOrderBusy]=useState(false),[lastPlacedOrder,setLastPlacedOrder]=useState(null);
+ [selectedAddressId,setSelectedAddressId]=useState(''),[orderBusy,setOrderBusy]=useState(false),[lastPlacedOrder,setLastPlacedOrder]=useState(null),[shippingSetting,setShippingSetting]=useState(null),[shippingLoading,setShippingLoading]=useState(false),[shippingLoadError,setShippingLoadError]=useState('');
  useEffect(()=>{
   let mounted=true;
   supabase.auth.getSession().then(({data})=>{if(mounted)setAuthUser(data?.session?.user||null);});
@@ -64,6 +64,33 @@ export default function App(){
   loadOrderHistory();
   return()=>{alive=false;};
  },[authUser]);
+ const selectedAddress=addresses.find(a=>String(a.id)===String(selectedAddressId));
+ const fxRates={USD:1,CAD:1.39,MXN:17.2,GBP:.79,EUR:.92,RSD:108,INR:83.2};
+ const countryCodes={'united states':'US','usa':'US','us':'US','canada':'CA','ca':'CA','mexico':'MX','mx':'MX','united kingdom':'GB','uk':'GB','gb':'GB','germany':'DE','de':'DE','france':'FR','fr':'FR','serbia':'RS','rs':'RS','india':'IN','in':'IN'};
+ const destinationCode=(selectedAddress?.country||'').trim().toLowerCase();
+ useEffect(()=>{
+  let alive=true;
+  async function fetchShipping(){
+   setShippingSetting(null);setShippingLoadError('');
+   if(!selectedAddress?.country)return;
+   setShippingLoading(true);
+   const code=countryCodes[destinationCode]||destinationCode.toUpperCase();
+   const {data,error}=await supabase.from('shipping_settings').select('*').eq('country_code',code).eq('active',true).maybeSingle();
+   if(!alive)return;
+   if(error)setShippingLoadError('Shipping rate could not be loaded: '+error.message);
+   else if(data)setShippingSetting(data);
+   else setShippingLoadError('Shipping rate for '+(selectedAddress.country||code)+' is not configured yet. Our team will confirm it before payment.');
+   setShippingLoading(false);
+  }
+  fetchShipping();return()=>{alive=false;};
+ },[selectedAddressId,selectedAddress?.country]);
+ const checkoutSubtotal=Number(total||0);
+ const shippingAmount=shippingSetting?Number(shippingSetting.shipping_charge||0)*(fxRates[country]||1)/(fxRates[shippingSetting.currency]||1):0;
+ const dutyAmount=shippingSetting?checkoutSubtotal*Number(shippingSetting.duty_percent||0)/100:0;
+ const freeShippingReached=shippingSetting?.free_shipping_minimum!=null&&checkoutSubtotal>=Number(shippingSetting.free_shipping_minimum||0);
+ const checkoutShipping=freeShippingReached?0:shippingAmount;
+ const checkoutDuty=dutyAmount;
+ const checkoutGrandTotal=Number((checkoutSubtotal+checkoutShipping+checkoutDuty).toFixed(2));
  function openCheckout(){
   if(!authUser){setCartOpen(false);setPage('account');showNotice('Please log in or create an account before checkout.');return;}
   if(!items.length){showNotice('Your bag is empty.');return;}
@@ -82,7 +109,10 @@ export default function App(){
    const rates={USD:1,CAD:1.39,MXN:17.2,GBP:.79,EUR:.92,RSD:108,INR:83.2};
    const rate=rates[country]||1;
    const subtotal=Number((items.reduce((sum,p)=>sum+(Number(p.price)||0)*Number(p.qty||1),0)*rate).toFixed(2));
-   const shipping=0,tax=0,total=Number((subtotal+shipping+tax).toFixed(2));
+   const orderShippingSetting=shippingSetting;
+   const shipping=orderShippingSetting?(orderShippingSetting.free_shipping_minimum!=null&&subtotal>=Number(orderShippingSetting.free_shipping_minimum)?0:Number(orderShippingSetting.shipping_charge||0)*(rates[country]||1)/(rates[orderShippingSetting.currency]||1)):0;
+   const tax=orderShippingSetting?Number((subtotal*Number(orderShippingSetting.duty_percent||0)/100).toFixed(2)):0;
+   const total=Number((subtotal+shipping+tax).toFixed(2));
    const countryName=(countries.find(c=>c[1]===country)||[])[0]||address.country;
    const orderNumber='GMX-'+new Date().toISOString().replace(/[-:T.Z]/g,'').slice(0,14)+'-'+Math.random().toString(36).slice(2,6).toUpperCase();
    const shippingAddress={label:address.label||'Delivery',recipient_name:address.recipient_name,phone:address.phone,address_line1:address.address_line1,address_line2:address.address_line2||'',city:address.city,state:address.state,postal_code:address.postal_code,country:address.country};
@@ -194,11 +224,13 @@ export default function App(){
    <div className="contact-card"><h3>Order summary</h3>
     {items.map((p,i)=><div key={`${p.id}-${p.variantId||'base'}-${i}`} style={{display:'flex',justifyContent:'space-between',gap:'12px',padding:'9px 0',borderBottom:'1px solid #eee'}}><span>{p.name} × {p.qty}<small style={{display:'block'}}>{p.variantSize||p.variantColor?`Size: ${p.variantSize||'—'} · Colour: ${p.variantColor||'—'}`:''}</small></span><b>{money(Number(p.price)*p.qty,country)}</b></div>)}
     <p style={{display:'flex',justifyContent:'space-between'}}><span>Subtotal</span><b>{money(total,country)}</b></p>
-    <p style={{display:'flex',justifyContent:'space-between'}}><span>Shipping</span><b>To be confirmed · 0.00</b></p>
-    <p style={{display:'flex',justifyContent:'space-between'}}><span>Tax</span><b>To be confirmed · 0.00</b></p>
-    <p style={{display:'flex',justifyContent:'space-between',fontSize:'18px',borderTop:'1px solid #ddd',paddingTop:'12px'}}><b>Estimated total</b><b>{money(total,country)}</b></p>
-    <p className="muted">Payment is not collected online at this stage. Your order will be placed with Pending status. Shipping charges, duties and taxes must be confirmed by the GMX team.</p>
-    <button className="solid full" disabled={orderBusy||!items.length||!selectedAddressId} onClick={placeCustomerOrder}>{orderBusy?'PLACING ORDER...':'CONFIRM ORDER · PAY LATER'}</button>
+    <p style={{display:'flex',justifyContent:'space-between'}}><span>Shipping</span><b>{shippingLoading?'Loading…':shippingSetting?money(checkoutShipping,country):'To be confirmed'}</b></p>
+    <p style={{display:'flex',justifyContent:'space-between'}}><span>Import duty</span><b>{shippingSetting?money(checkoutDuty,country):'To be confirmed'}</b></p>
+    {shippingLoadError&&<p className="muted">{shippingLoadError}</p>}
+    {shippingSetting&&freeShippingReached&&<p className="muted">Free shipping applied.</p>}
+    <p style={{display:'flex',justifyContent:'space-between',fontSize:'18px',borderTop:'1px solid #ddd',paddingTop:'12px'}}><b>Estimated total</b><b>{money(shippingSetting?checkoutGrandTotal:checkoutSubtotal,country)}</b></p>
+    <p className="muted">Payment is not collected online at this stage. Import duty is estimated using the rate configured by GMX. Final charges may be confirmed before dispatch.</p>
+    <button className="solid full" disabled={orderBusy||!items.length||!selectedAddressId||shippingLoading||!shippingSetting} onClick={placeCustomerOrder}>{orderBusy?'PLACING ORDER...':'CONFIRM ORDER · PAY LATER'}</button>
    </div>
   </div>
   <button className="text-link" style={{marginTop:'20px'}} onClick={()=>{setPage('home');setCartOpen(true)}}>← BACK TO SHOPPING BAG</button>
