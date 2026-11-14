@@ -66,6 +66,7 @@ export default function App(){
  },[authUser]);
  const selectedAddress=addresses.find(a=>String(a.id)===String(selectedAddressId));
  const fxRates={USD:1,CAD:1.39,MXN:17.2,GBP:.79,EUR:.92,RSD:108,INR:83.2};
+  const currencyCodeOf=(value)=>{const match=String(value||'USD').trim().match(/[A-Za-z]{3}/);return match?match[0].toUpperCase():'USD';};
  const countryCodes={'united states':'US','usa':'US','us':'US','canada':'CA','ca':'CA','mexico':'MX','mx':'MX','united kingdom':'GB','uk':'GB','gb':'GB','germany':'DE','de':'DE','france':'FR','fr':'FR','serbia':'RS','rs':'RS','india':'IN','in':'IN'};
  const destinationCode=(selectedAddress?.country||'').trim().toLowerCase();
  useEffect(()=>{
@@ -85,9 +86,11 @@ export default function App(){
   fetchShipping();return()=>{alive=false;};
  },[selectedAddressId,selectedAddress?.country]);
  const checkoutSubtotal=Number(items.reduce((sum,p)=>sum+(Number(p.price)||0)*Number(p.qty||1),0));
- const shippingAmount=shippingSetting?Number(shippingSetting.shipping_charge||0)*(fxRates[country]||1)/(fxRates[shippingSetting.currency]||1):0;
+ const shippingRateCurrency=shippingSetting?currencyCodeOf(shippingSetting.currency):'USD';
+ const shippingAmount=shippingSetting?Number(shippingSetting.shipping_charge||0)*(fxRates[country]||1)/(fxRates[shippingRateCurrency]||1):0;
  const dutyAmount=shippingSetting?checkoutSubtotal*Number(shippingSetting.duty_percent||0)/100:0;
- const freeShippingReached=shippingSetting?.free_shipping_minimum!=null&&checkoutSubtotal>=Number(shippingSetting.free_shipping_minimum||0);
+ const freeShippingMinimum=shippingSetting?.free_shipping_minimum==null?null:Number(shippingSetting.free_shipping_minimum)*(fxRates[country]||1)/(fxRates[shippingRateCurrency]||1);
+ const freeShippingReached=freeShippingMinimum!==null&&checkoutSubtotal>=freeShippingMinimum;
  const checkoutShipping=freeShippingReached?0:shippingAmount;
  const checkoutDuty=dutyAmount;
  const checkoutGrandTotal=Number((checkoutSubtotal+checkoutShipping+checkoutDuty).toFixed(2));
@@ -110,7 +113,9 @@ export default function App(){
    const rate=rates[country]||1;
    const subtotal=Number((items.reduce((sum,p)=>sum+(Number(p.price)||0)*Number(p.qty||1),0)*rate).toFixed(2));
    const orderShippingSetting=shippingSetting;
-   const shipping=orderShippingSetting?(orderShippingSetting.free_shipping_minimum!=null&&subtotal>=Number(orderShippingSetting.free_shipping_minimum)?0:Number(orderShippingSetting.shipping_charge||0)*(rates[country]||1)/(rates[orderShippingSetting.currency]||1)):0;
+   const orderShippingCurrency=orderShippingSetting?currencyCodeOf(orderShippingSetting.currency):'USD';
+   const orderFreeShippingMinimum=orderShippingSetting?.free_shipping_minimum==null?null:Number(orderShippingSetting.free_shipping_minimum)*(rates[country]||1)/(rates[orderShippingCurrency]||1);
+   const shipping=orderShippingSetting?(orderFreeShippingMinimum!==null&&subtotal>=orderFreeShippingMinimum?0:Number(orderShippingSetting.shipping_charge||0)*(rates[country]||1)/(rates[orderShippingCurrency]||1)):0;
    const tax=orderShippingSetting?Number((subtotal*Number(orderShippingSetting.duty_percent||0)/100).toFixed(2)):0;
    const total=Number((subtotal+shipping+tax).toFixed(2));
    const countryName=(countries.find(c=>c[1]===country)||[])[0]||address.country;
