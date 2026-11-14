@@ -87,9 +87,10 @@ export default function App(){
  },[selectedAddressId,selectedAddress?.country]);
  const checkoutSubtotal=Number(items.reduce((sum,p)=>sum+(Number(p.price)||0)*Number(p.qty||1),0));
  const shippingRateCurrency=shippingSetting?currencyCodeOf(shippingSetting.currency):'USD';
- const shippingAmount=shippingSetting?Number(shippingSetting.shipping_charge||0)*(fxRates[country]||1)/(fxRates[shippingRateCurrency]||1):0;
+ // Keep checkout calculations in the app's base currency (USD); money() converts for display.
+ const shippingAmount=shippingSetting?Number(shippingSetting.shipping_charge||0)/(fxRates[shippingRateCurrency]||1):0;
  const dutyAmount=shippingSetting?checkoutSubtotal*Number(shippingSetting.duty_percent||0)/100:0;
- const freeShippingMinimum=shippingSetting?.free_shipping_minimum==null?null:Number(shippingSetting.free_shipping_minimum)*(fxRates[country]||1)/(fxRates[shippingRateCurrency]||1);
+ const freeShippingMinimum=shippingSetting?.free_shipping_minimum==null?null:Number(shippingSetting.free_shipping_minimum)/(fxRates[shippingRateCurrency]||1);
  const freeShippingReached=freeShippingMinimum!==null&&checkoutSubtotal>=freeShippingMinimum;
  const checkoutShipping=freeShippingReached?0:shippingAmount;
  const checkoutDuty=dutyAmount;
