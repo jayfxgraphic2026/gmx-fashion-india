@@ -43,7 +43,7 @@ export default function App(){
  [addressForm,setAddressForm]=useState({label:'Home',recipient_name:'',phone:'',address_line1:'',address_line2:'',city:'',state:'',postal_code:'',country:'India',is_default:false}),
  [editingAddressId,setEditingAddressId]=useState(null),[addressFormOpen,setAddressFormOpen]=useState(false),[addressBusy,setAddressBusy]=useState(false),
  [orderHistory,setOrderHistory]=useState([]),[orderItemsById,setOrderItemsById]=useState({}),[ordersBusy,setOrdersBusy]=useState(false),
- [selectedAddressId,setSelectedAddressId]=useState(''),[orderBusy,setOrderBusy]=useState(false),[lastPlacedOrder,setLastPlacedOrder]=useState(null),[shippingSetting,setShippingSetting]=useState(null),[shippingLoading,setShippingLoading]=useState(false),[shippingLoadError,setShippingLoadError]=useState('');
+ [selectedAddressId,setSelectedAddressId]=useState(''),[orderBusy,setOrderBusy]=useState(false),[lastPlacedOrder,setLastPlacedOrder]=useState(null),[shippingSetting,setShippingSetting]=useState(null),[shippingLoading,setShippingLoading]=useState(false),[shippingLoadError,setShippingLoadError]=useState(''),[trackOrderQuery,setTrackOrderQuery]=useState(''),[trackOrderResult,setTrackOrderResult]=useState(null),[trackOrderMessage,setTrackOrderMessage]=useState(''),[policyPage,setPolicyPage]=useState('');
  useEffect(()=>{
   let mounted=true;
   supabase.auth.getSession().then(({data})=>{if(mounted)setAuthUser(data?.session?.user||null);});
@@ -220,6 +220,22 @@ export default function App(){
   if(error){setAuthMessage(error.message);return;}
   setAuthUser(null);setAuthPassword('');setAuthMessage('You have been logged out.');
  }
+ function openFooterPage(label){
+  if(label==='Track My Order'){
+   setTrackOrderQuery('');setTrackOrderResult(null);setTrackOrderMessage('');
+   if(!authUser){setPage('account');showNotice('Please log in to view and track your orders.');return;}
+   setPage('track-order');return;
+  }
+  setPolicyPage(label);setPage('policy');
+ }
+ function findCustomerOrder(e){
+  e.preventDefault();
+  const query=trackOrderQuery.trim().toLowerCase();
+  if(!query){setTrackOrderMessage('Please enter your order number.');setTrackOrderResult(null);return;}
+  const found=orderHistory.find(o=>String(o.order_number||'').trim().toLowerCase()===query||String(o.tracking_number||'').trim().toLowerCase()===query);
+  setTrackOrderResult(found||null);
+  setTrackOrderMessage(found?'Order found.': 'No matching order was found in your account. Check the order number and try again.');
+ }
  const products=useMemo(()=>catalog.filter(p=>(cat==='All Collections'||p.category===cat)&&(`${p.name} ${p.category} ${p.subcategory}`).toLowerCase().includes(search.toLowerCase())).sort((a,b)=>sort==='Price: Low to High'?(Number(a.price)||0)-(Number(b.price)||0):sort==='Price: High to Low'?(Number(b.price)||0)-(Number(a.price)||0):0),[catalog,cat,search,sort]);
  const count=items.reduce((s,p)=>s+p.qty,0),total=items.reduce((s,p)=>s+(Number(p.price)||0)*p.qty,0);const chosenVariant=activeVariants.find(v=>v.size===selectedSize&&v.color===selectedColor);const sizeOptions=[...new Set(activeVariants.map(v=>v.size).filter(Boolean))];const colorOptions=[...new Set(activeVariants.filter(v=>!selectedSize||v.size===selectedSize).map(v=>v.color).filter(Boolean))];
  function showNotice(message){setNotice(message);window.clearTimeout(noticeTimer.current);noticeTimer.current=window.setTimeout(()=>setNotice(''),2600)}
@@ -336,7 +352,53 @@ export default function App(){
     <button className="outline full" onClick={()=>setCartOpen(true)}>VIEW MY BAG</button>
    </div>}
   </section>}
- <footer><div className="footer-main"><div className="footer-brand"><span className="brand-mark">GMX</span><h3>FASHION INDIA</h3><p>Bringing India's Heritage & Fashion to the World.</p><a href={wa} target="_blank">WHATSAPP: +91 62396 86493</a></div><div><b>EXPLORE</b>{cats.slice(1,6).map(c=><button onClick={()=>{setCat(c);setPage('shop')}}>{c}</button>)}</div><div><b>CUSTOMER CARE</b>{['Track My Order','Shipping Policy','Returns & Refunds','Privacy Policy','Terms & Conditions'].map(c=><button onClick={()=>setNotice('This policy page will be published with verified business details.')}>{c}</button>)}</div><div><b>BUSINESS</b><button onClick={()=>setPage('wholesale')}>Wholesale & Export</button><button onClick={()=>setPage('wholesale')}>Become a Distributor</button><button onClick={()=>setPage('contact')}>Contact Us</button><p>91, Village Kandala,<br/>District Mohali, Punjab 140306, India</p></div></div><div className="footer-bottom"><span>© 2026 GMX FASHION INDIA. ALL RIGHTS RESERVED.</span><span>MADE WITH CARE IN INDIA ✦</span></div></footer>
+ {page==='track-order'&&<section className="section form-page" style={{maxWidth:'900px',margin:'0 auto'}}>
+  <div className="crumb">HOME / CUSTOMER CARE / TRACK MY ORDER</div>
+  <label>CUSTOMER CARE</label><h2>Track your <i>order.</i></h2>
+  <p>Enter the order number shown in your order confirmation. For privacy, this page searches only orders in your signed-in GMX account.</p>
+  {ordersBusy?<p>Loading your orders...</p>:<form onSubmit={findCustomerOrder} style={{display:'flex',gap:'10px',flexWrap:'wrap',margin:'22px 0'}}>
+   <input value={trackOrderQuery} onChange={e=>{setTrackOrderQuery(e.target.value);setTrackOrderMessage('');setTrackOrderResult(null)}} placeholder="Enter order number (e.g. GMX-...)" required style={{flex:'1 1 260px',minWidth:0,padding:'13px',border:'1px solid #ddd',borderRadius:'8px'}}/>
+   <button className="solid" type="submit">TRACK ORDER</button>
+  </form>}
+  {trackOrderMessage&&<p role="status">{trackOrderMessage}</p>}
+  {trackOrderResult&&<div className="contact-card" style={{marginTop:'18px'}}>
+   <div style={{display:'flex',justifyContent:'space-between',gap:'12px',flexWrap:'wrap'}}><h3 style={{margin:0}}>{trackOrderResult.order_number||'Your order'}</h3><b>{trackOrderResult.status||'Pending'}</b></div>
+   <p>Date: {trackOrderResult.created_at?new Date(trackOrderResult.created_at).toLocaleString():'—'}</p>
+   <p>Total: {new Intl.NumberFormat(undefined,{style:'currency',currency:trackOrderResult.currency||country}).format(Number(trackOrderResult.total)||0)}</p>
+   {(orderItemsById[trackOrderResult.id]||[]).map(line=><p key={line.id}>{line.product_name} × {line.quantity}</p>)}
+   {(trackOrderResult.courier_name||trackOrderResult.tracking_number||trackOrderResult.tracking_url)&&<div style={{borderTop:'1px solid #eee',paddingTop:'12px',marginTop:'12px'}}>
+    {trackOrderResult.courier_name&&<p>Courier: <b>{trackOrderResult.courier_name}</b></p>}
+    {trackOrderResult.tracking_number&&<p>Tracking number: <b>{trackOrderResult.tracking_number}</b></p>}
+    {trackOrderResult.tracking_url&&/^https?:\/\//i.test(trackOrderResult.tracking_url)&&<a href={trackOrderResult.tracking_url} target="_blank" rel="noopener noreferrer">TRACK WITH COURIER ↗</a>}
+   </div>}
+   {!trackOrderResult.tracking_number&&!trackOrderResult.tracking_url&&<p className="muted">Shipment tracking details will appear here after dispatch details are added to your order.</p>}
+  </div>}
+  <button className="outline" style={{marginTop:'18px'}} onClick={()=>setPage('account')}>VIEW MY ACCOUNT & ORDERS</button>
+ </section>}
+ {page==='policy'&&<section className="section form-page" style={{maxWidth:'900px',margin:'0 auto'}}>
+  <div className="crumb">HOME / CUSTOMER CARE / {policyPage.toUpperCase()}</div>
+  <label>GMX FASHION INDIA · CUSTOMER CARE</label><h2>{policyPage}</h2>
+  {policyPage==='Shipping Policy'&&<>
+   <p>Shipping availability and charges depend on the delivery destination. Where configured, the checkout displays the applicable shipping charge and estimated import duty. If a destination rate is not configured, our team will confirm the applicable charges before dispatch.</p>
+   <p>International delivery timelines and final charges should be confirmed with our team for your destination before the order is dispatched.</p>
+  </>}
+  {policyPage==='Returns & Refunds'&&<>
+   <p>For return, replacement or refund enquiries, please contact GMX FASHION INDIA with your order number and the reason for your request.</p>
+   <p>Return eligibility, timelines and any applicable conditions must be confirmed by our customer-care team for the specific order before a return is sent.</p>
+  </>}
+  {policyPage==='Privacy Policy'&&<>
+   <p>GMX FASHION INDIA uses the account, contact and delivery information you provide to support account access, order processing and customer service.</p>
+   <p>For questions about your information or a privacy-related request, please contact our team using the WhatsApp contact details on this website.</p>
+  </>}
+  {policyPage==='Terms & Conditions'&&<>
+   <p>Product availability, order details and delivery information are subject to confirmation by GMX FASHION INDIA.</p>
+   <p>At present, online payment is not collected through this website. Orders are recorded as pending while our team confirms shipping, duties, taxes and payment arrangements with the customer.</p>
+   <p>Please contact our team if you need clarification about a product or order before proceeding.</p>
+  </>}
+  <div className="contact-card" style={{marginTop:'22px'}}><h3>Need help?</h3><p>Share your order number or enquiry with our customer-care team.</p><a className="solid" href={wa} target="_blank" rel="noopener noreferrer">CONTACT US ON WHATSAPP</a></div>
+  <button className="outline" style={{marginTop:'18px'}} onClick={()=>setPage('home')}>BACK TO HOME</button>
+ </section>}
+ <footer><div className="footer-main"><div className="footer-brand"><span className="brand-mark">GMX</span><h3>FASHION INDIA</h3><p>Bringing India's Heritage & Fashion to the World.</p><a href={wa} target="_blank">WHATSAPP: +91 62396 86493</a></div><div><b>EXPLORE</b>{cats.slice(1,6).map(c=><button onClick={()=>{setCat(c);setPage('shop')}}>{c}</button>)}</div><div><b>CUSTOMER CARE</b>{['Track My Order','Shipping Policy','Returns & Refunds','Privacy Policy','Terms & Conditions'].map(c=><button key={c} onClick={()=>openFooterPage(c)}>{c}</button>)}</div><div><b>BUSINESS</b><button onClick={()=>setPage('wholesale')}>Wholesale & Export</button><button onClick={()=>setPage('wholesale')}>Become a Distributor</button><button onClick={()=>setPage('contact')}>Contact Us</button><p>91, Village Kandala,<br/>District Mohali, Punjab 140306, India</p></div></div><div className="footer-bottom"><span>© 2026 GMX FASHION INDIA. ALL RIGHTS RESERVED.</span><span>MADE WITH CARE IN INDIA ✦</span></div></footer>
  <a className="whatsapp" href={wa} target="_blank" aria-label="WhatsApp"><MessageCircle/> <span>Chat with us</span></a>
  {cartOpen&&<div className="overlay" onClick={()=>setCartOpen(false)}><aside className="cart-drawer" onClick={e=>e.stopPropagation()}><div className="drawer-head"><h2>Your bag <small>({count} items)</small></h2><button onClick={()=>setCartOpen(false)}><X/></button></div>{items.length? <>{items.map(p=><div className="cart-line"><img src={p.variantImage||p.image}/><div><b>{p.name}</b>{(p.variantSize||p.variantColor)&&<small style={{display:'block',margin:'4px 0'}}>Size: {p.variantSize||'—'} · Colour: {p.variantColor||'—'}</small>}<strong>{Number(p.price)>0?money(Number(p.price),country):'Price on request'}</strong><div className="qty"><button onClick={()=>persistCart(items.map(x=>x.id===p.id&&(x.variantId||'base')===(p.variantId||'base')?{...x,qty:Math.max(1,x.qty-1)}:x))}><Minus size={13}/></button>{p.qty}<button onClick={()=>persistCart(items.map(x=>x.id===p.id&&(x.variantId||'base')===(p.variantId||'base')?{...x,qty:x.qty+1}:x))}><Plus size={13}/></button><button className="remove" onClick={()=>persistCart(items.filter(x=>!(x.id===p.id&&(x.variantId||'base')===(p.variantId||'base'))))}>Remove</button></div></div></div>)}<div className="cart-total"><span>Subtotal · indicative</span><b>{money(total,country)}</b></div><p className="muted">Shipping, duties and applicable taxes are calculated after destination and shipping method are confirmed.</p><button className="solid full" onClick={openCheckout}>CONTINUE TO CHECKOUT</button></>:<div className="empty"><ShoppingBag size={36}/><h3>Your bag is waiting</h3><p>Explore the collection and add something special.</p><button className="solid" onClick={()=>{setCartOpen(false);setPage('shop')}}>START SHOPPING</button></div>}</aside></div>}
  {active&&<div className="overlay" onClick={()=>setActive(null)}><div className="product-modal" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={()=>setActive(null)}><X/></button><div className="product-gallery" style={{display:'grid',gap:'12px',alignContent:'start',minWidth:0}}>
