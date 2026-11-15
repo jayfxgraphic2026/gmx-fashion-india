@@ -1,443 +1,390 @@
-import React,{useEffect,useMemo,useRef,useState} from 'react';
-import {Search,ShoppingBag,Heart,User,Menu,Globe,ChevronDown,Plus,Minus,X,ArrowRight,Star,Truck,ShieldCheck,Package,Share2,MessageCircle,SlidersHorizontal,Check,MapPin,Mail} from 'lucide-react';
-import seed from './catalog.json';
+import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from './supabase';
-const countries=[['United States','USD','$','US'],['Canada','CAD','CA$','CA'],['Mexico','MXN','MX$','MX'],['United Kingdom','GBP','£','GB'],['Germany','EUR','€','DE'],['France','EUR','€','FR'],['Serbia','RSD','дин','RS'],['India','INR','₹','IN']];
-const STATE_OPTIONS={
- IN:['Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat','Haryana','Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh','Maharashtra','Manipur','Meghalaya','Mizoram','Nagaland','Odisha','Punjab','Rajasthan','Sikkim','Tamil Nadu','Telangana','Tripura','Uttar Pradesh','Uttarakhand','West Bengal','Delhi','Jammu and Kashmir','Ladakh'],
- US:['Alabama','Alaska','Arizona','Arkansas','California','Colorado','Connecticut','Delaware','Florida','Georgia','Hawaii','Idaho','Illinois','Indiana','Iowa','Kansas','Kentucky','Louisiana','Maine','Maryland','Massachusetts','Michigan','Minnesota','Mississippi','Missouri','Montana','Nebraska','Nevada','New Hampshire','New Jersey','New Mexico','New York','North Carolina','North Dakota','Ohio','Oklahoma','Oregon','Pennsylvania','Rhode Island','South Carolina','South Dakota','Tennessee','Texas','Utah','Vermont','Virginia','Washington','West Virginia','Wisconsin','Wyoming','District of Columbia'],
- CA:['Alberta','British Columbia','Manitoba','New Brunswick','Newfoundland and Labrador','Northwest Territories','Nova Scotia','Nunavut','Ontario','Prince Edward Island','Quebec','Saskatchewan','Yukon'],
- AU:['Australian Capital Territory','New South Wales','Northern Territory','Queensland','South Australia','Tasmania','Victoria','Western Australia'],
- GB:['England','Northern Ireland','Scotland','Wales'],
- MX:['Aguascalientes','Baja California','Baja California Sur','Campeche','Chiapas','Chihuahua','Ciudad de Mexico','Coahuila','Colima','Durango','Guanajuato','Guerrero','Hidalgo','Jalisco','Mexico','Michoacan','Morelos','Nayarit','Nuevo Leon','Oaxaca','Puebla','Queretaro','Quintana Roo','San Luis Potosi','Sinaloa','Sonora','Tabasco','Tamaulipas','Tlaxcala','Veracruz','Yucatan','Zacatecas']
-};
-const countryByName=(name)=>countries.find(c=>c[0].toLowerCase()===String(name||'').toLowerCase());
-const countryByCode=(code)=>countries.find(c=>c[3]===String(code||'').toUpperCase());
-const COLLECTIONS=[
- {name:'Luxury Premium Apparels & Layering',description:'Fine Pashmina Shawls, Shrugs, Ponchos, Long Kaftans and matching Cord Sets, selected for refined style and comfortable layering.'},
- {name:'Fine Jewelry Collection',description:'A curated collection of traditional Jhumkas and magnificent Heritage Necklaces.'},
- {name:'Spiritual & Puja Essentials',description:'Tulsi and Rudraksha Malas, Ritual Shankh (Conch Shells), Ceremonial Dhotis, Devotional Kurtas, Chanting Potlis, Om Bracelets and Sacred Altar Tapestries.'},
- {name:'Modern Western & Streetwear',description:"Heavy-grain Men's Leather Jackets, Winter Coats, Sweaters, Heavyweight Hoodies, and all-season Tracksuits and Pajamas."},
- {name:'Cultural & Multireligious Lines',description:'Japanese Fusion Kurtas, premium embroidered Punjabi Juttis, tailored Abayas, Hijabs, plush Velvet Prayer Mats and traditional Topis.'},
- {name:'Aromatics & Lifestyle Fragrances',description:'Non-alcoholic Attars and Perfumes, natural hand-rolled Agarbatti sticks and brass holders.'}
-];
-const cats=['All Collections',...COLLECTIONS.map(c=>c.name)];
+
+const categories = ['Luxury Premium Apparels & Layering','Fine Jewelry Collection','Spiritual & Puja Essentials','Modern Western & Streetwear','Cultural & Multireligious Lines','Aromatics & Lifestyle Fragrances'];
+const clothingCategories = ['Luxury Premium Apparels & Layering','Modern Western & Streetwear','Cultural & Multireligious Lines'];
 const westernTerms=/leather jacket|winter coat|coat|sweater|hoodie|tracksuit|track suit|pajama|streetwear/i;
-function collectionForProduct(p){const raw=String(p.category||'').toLowerCase();const words=`${p.name||''} ${p.subcategory||''} ${p.description||''}`;if(/jewell|jhumka|necklace|earring|bracelet|pendant/.test(raw+' '+words.toLowerCase()))return 'Fine Jewelry Collection';if(/perfume|attar|fragrance|agarbatti|incense|brass holder/.test(raw+' '+words.toLowerCase()))return 'Aromatics & Lifestyle Fragrances';if(/puja|spiritual|rudraksha|tulsi|shankh|conch|dhoti|chanting|altar|om mala/.test(raw+' '+words.toLowerCase()))return 'Spiritual & Puja Essentials';if(/muslim|abaya|hijab|prayer mat|topi|punjabi jutti|japanese fusion|handicraft/.test(raw+' '+words.toLowerCase()))return 'Cultural & Multireligious Lines';if(westernTerms.test(words)||/leather/.test(raw))return 'Modern Western & Streetwear';if(/women|men|apparel|clothing|shawl|shrug|poncho|kaftan|cord set/.test(raw+' '+words.toLowerCase()))return 'Luxury Premium Apparels & Layering';return COLLECTIONS.some(c=>c.name===p.category)?p.category:'Cultural & Multireligious Lines';}
-function normalizeProduct(p){return {...p,category:collectionForProduct(p)};}
-const collectionDescription=(name)=>COLLECTIONS.find(c=>c.name===name)?.description||'Explore the complete GMX FASHION INDIA collection.';
 function needsVariants(p){const text=`${p.name||''} ${p.subcategory||''}`;return p.category==='Luxury Premium Apparels & Layering'||p.category==='Modern Western & Streetwear'||(p.category==='Cultural & Multireligious Lines'&&/kurta|abaya|hijab|jutti|topi|apparel|clothing/i.test(text));}
-const money=(n,c)=>{let rates={USD:1,CAD:1.39,MXN:17.2,GBP:.79,EUR:.92,RSD:108,INR:83.2};let symbols={USD:'$',CAD:'CA$',MXN:'MX$',GBP:'£',EUR:'€',RSD:'дин ',INR:'₹'};return symbols[c]+(n*rates[c]).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})};
-export default function App(){
- const noticeTimer=useRef(null);
- const[catalog,setCatalog]=useState(()=>seed.map(normalizeProduct));
- useEffect(()=>{let alive=true;async function loadProducts(){const {data,error}=await supabase.from('products').select('*').eq('active',true).order('created_at',{ascending:false});if(!alive)return;if(!error&&Array.isArray(data)&&data.length){const normalized=data.map(p=>{let imageList=Array.isArray(p.images)?p.images:[];if(!imageList.length&&typeof p.images==='string'){try{const parsed=JSON.parse(p.images);if(Array.isArray(parsed))imageList=parsed;}catch{imageList=p.images.split(',').map(x=>x.trim()).filter(Boolean);}}const allImages=[...new Set([...imageList,p.image].filter(x=>typeof x==='string'&&x.trim()).map(x=>x.trim()))];return normalizeProduct({...p,images:allImages,image:allImages[0]||p.image||'',rating:p.rating??0,reviews:p.reviews??0,subcategory:p.subcategory||'',description:p.description||'',origin:p.origin||'India',stock:p.stock??0});});setCatalog(normalized);}else if(error){console.error('Supabase product load failed:',error.message);}setCatalogLoading(false);}loadProducts();return()=>{alive=false};},[]);
- const[catalogLoading,setCatalogLoading]=useState(true);
- const[items,setItems]=useState(()=>{try{return JSON.parse(localStorage.gmxCart||'[]')}catch{return[]}}),[wish,setWish]=useState(()=>JSON.parse(localStorage.gmxWish||'[]')),[country,setCountry]=useState('USD'),[countryManuallySelected,setCountryManuallySelected]=useState(false),[lang,setLang]=useState('English'),[search,setSearch]=useState(''),[cat,setCat]=useState('All Collections'),[sort,setSort]=useState('Featured'),[cartOpen,setCartOpen]=useState(false),[active,setActive]=useState(null),[activeImageIndex,setActiveImageIndex]=useState(0),[qty,setQty]=useState(1),[notice,setNotice]=useState(''),[page,setPage]=useState('home'),[mobile,setMobile]=useState(false),[filter,setFilter]=useState(false),[email,setEmail]=useState(''),[activeVariants,setActiveVariants]=useState([]),[selectedSize,setSelectedSize]=useState(''),[selectedColor,setSelectedColor]=useState(''),[variantLoading,setVariantLoading]=useState(false),
- [authUser,setAuthUser]=useState(null),[authMode,setAuthMode]=useState('login'),
- [authName,setAuthName]=useState(''),[authEmail,setAuthEmail]=useState(''),
- [authPassword,setAuthPassword]=useState(''),[authBusy,setAuthBusy]=useState(false),
- [authMessage,setAuthMessage]=useState(''),
- [customerProfile,setCustomerProfile]=useState({full_name:'',phone:''}),
- [profileBusy,setProfileBusy]=useState(false),[addresses,setAddresses]=useState([]),
- [addressForm,setAddressForm]=useState({label:'Home',recipient_name:'',phone:'',address_line1:'',address_line2:'',city:'',state:'',postal_code:'',country:'India',is_default:false}),
- [editingAddressId,setEditingAddressId]=useState(null),[addressFormOpen,setAddressFormOpen]=useState(false),[addressBusy,setAddressBusy]=useState(false),
- [orderHistory,setOrderHistory]=useState([]),[orderItemsById,setOrderItemsById]=useState({}),[ordersBusy,setOrdersBusy]=useState(false),
- [selectedAddressId,setSelectedAddressId]=useState(''),[orderBusy,setOrderBusy]=useState(false),[lastPlacedOrder,setLastPlacedOrder]=useState(null),[shippingSetting,setShippingSetting]=useState(null),[shippingLoading,setShippingLoading]=useState(false),[shippingLoadError,setShippingLoadError]=useState(''),[trackOrderQuery,setTrackOrderQuery]=useState(''),[trackOrderResult,setTrackOrderResult]=useState(null),[trackOrderMessage,setTrackOrderMessage]=useState(''),[policyPage,setPolicyPage]=useState(''),[selectedPaymentMethod,setSelectedPaymentMethod]=useState('usdt'),[paymentReference,setPaymentReference]=useState('');
- useEffect(()=>{
-  let mounted=true;
-  supabase.auth.getSession().then(({data})=>{if(mounted)setAuthUser(data?.session?.user||null);});
-  const {data:{subscription}}=supabase.auth.onAuthStateChange((_event,session)=>{setAuthUser(session?.user||null);});
-  return ()=>{mounted=false;subscription?.unsubscribe();};
- },[]);
- useEffect(()=>{let alive=true; if(countryManuallySelected)return; fetch('https://ipapi.co/json/').then(r=>{if(!r.ok)throw new Error('Country lookup unavailable');return r.json();}).then(info=>{if(!alive)return;const found=countryByCode(info?.country_code);if(found)setCountry(found[1]);}).catch(()=>{});return()=>{alive=false;};},[countryManuallySelected]);
- useEffect(()=>{
-  let alive=true;
-  async function loadCustomerData(){
-   if(!authUser){setCustomerProfile({full_name:'',phone:''});setAddresses([]);return;}
-   const [profileResult,addressResult]=await Promise.all([
-    supabase.from('customer_profiles').select('full_name,phone').eq('user_id',authUser.id).maybeSingle(),
-    supabase.from('customer_addresses').select('*').eq('user_id',authUser.id).order('created_at',{ascending:false})
-   ]);
-   if(!alive)return;
-   if(profileResult.error) setAuthMessage('Profile could not be loaded: '+profileResult.error.message);
-   else setCustomerProfile({full_name:profileResult.data?.full_name||authUser.user_metadata?.full_name||'',phone:profileResult.data?.phone||''});
-   if(addressResult.error) setAuthMessage('Addresses could not be loaded: '+addressResult.error.message);
-   else setAddresses(addressResult.data||[]);
-  }
-  loadCustomerData();
-  return()=>{alive=false;};
- },[authUser]);
- useEffect(()=>{
-  let alive=true;
-  async function loadOrderHistory(){
-   if(!authUser){setOrderHistory([]);setOrderItemsById({});return;}
-   setOrdersBusy(true);
-   const {data,error}=await supabase.from('orders').select('*').eq('user_id',authUser.id).order('created_at',{ascending:false});
-   if(!alive)return;
-   if(error){showNotice('Order history could not be loaded: '+error.message);setOrderHistory([]);setOrderItemsById({});setOrdersBusy(false);return;}
-   const rows=data||[];setOrderHistory(rows);
-   if(rows.length){
-    const {data:lineRows,error:lineError}=await supabase.from('order_items').select('*').in('order_id',rows.map(o=>o.id));
-    if(!alive)return;
-    if(lineError)showNotice('Order items could not be loaded: '+lineError.message);
-    else{const grouped={};(lineRows||[]).forEach(line=>{(grouped[line.order_id] ||= []).push(line);});setOrderItemsById(grouped);}
-   }else setOrderItemsById({});
-   setOrdersBusy(false);
-  }
-  loadOrderHistory();
-  return()=>{alive=false;};
- },[authUser]);
- const selectedAddress=addresses.find(a=>String(a.id)===String(selectedAddressId));
- const fxRates={USD:1,CAD:1.39,MXN:17.2,GBP:.79,EUR:.92,RSD:108,INR:83.2};
-  const currencyCodeOf=(value)=>{const match=String(value||'USD').trim().match(/[A-Za-z]{3}/);return match?match[0].toUpperCase():'USD';};
- const countryCodes={'united states':'US','usa':'US','us':'US','canada':'CA','ca':'CA','mexico':'MX','mx':'MX','united kingdom':'GB','uk':'GB','gb':'GB','germany':'DE','de':'DE','france':'FR','fr':'FR','serbia':'RS','rs':'RS','india':'IN','in':'IN'};
- const destinationCode=(selectedAddress?.country||'').trim().toLowerCase();
- useEffect(()=>{
-  let alive=true;
-  async function fetchShipping(){
-   setShippingSetting(null);setShippingLoadError('');
-   if(!selectedAddress?.country)return;
-   setShippingLoading(true);
-   const code=countryCodes[destinationCode]||countryByName(selectedAddress.country)?.[3]||destinationCode.toUpperCase();
-   const {data,error}=await supabase.from('shipping_settings').select('*').eq('country_code',code).eq('active',true).maybeSingle();
-   if(!alive)return;
-   if(error)setShippingLoadError('Shipping rate could not be loaded: '+error.message);
-   else if(data)setShippingSetting(data);
-   else setShippingLoadError('Shipping rate for '+(selectedAddress.country||code)+' is not configured yet. Our team will confirm it before payment.');
-   setShippingLoading(false);
-  }
-  fetchShipping();return()=>{alive=false;};
- },[selectedAddressId,selectedAddress?.country]);
- const checkoutSubtotal=Number(items.reduce((sum,p)=>sum+(Number(p.price)||0)*Number(p.qty||1),0));
- const shippingRateCurrency=shippingSetting?currencyCodeOf(shippingSetting.currency):'USD';
- // Keep checkout calculations in the app's base currency (USD); money() converts for display.
- const shippingAmount=shippingSetting?Number(shippingSetting.shipping_charge||0)/(fxRates[shippingRateCurrency]||1):0;
- const dutyAmount=shippingSetting?checkoutSubtotal*Number(shippingSetting.duty_percent||0)/100:0;
- const freeShippingMinimum=shippingSetting?.free_shipping_minimum==null?null:Number(shippingSetting.free_shipping_minimum)/(fxRates[shippingRateCurrency]||1);
- const freeShippingReached=freeShippingMinimum!==null&&checkoutSubtotal>=freeShippingMinimum;
- const checkoutShipping=freeShippingReached?0:shippingAmount;
- const checkoutDuty=dutyAmount;
- const checkoutGrandTotal=Number((checkoutSubtotal+checkoutShipping+checkoutDuty).toFixed(2));
- function openCheckout(){
-  if(!authUser){setCartOpen(false);setPage('account');showNotice('Please log in or create an account before checkout.');return;}
-  if(!items.length){showNotice('Your bag is empty.');return;}
-  const preferred=addresses.find(a=>a.is_default)||addresses[0];
-  if(!preferred){setCartOpen(false);setPage('account');showNotice('Please add a delivery address before checkout.');return;}
-  setSelectedAddressId(preferred.id);setCartOpen(false);setPage('checkout');
- }
- async function placeCustomerOrder(){
-  if(!authUser){setPage('account');showNotice('Please log in before placing your order.');return;}
-  if(!items.length){showNotice('Your bag is empty.');return;}
-  const address=addresses.find(a=>String(a.id)===String(selectedAddressId));
-  if(!address){showNotice('Please select a delivery address.');return;}
-  if(items.some(p=>!Number.isFinite(Number(p.price))||Number(p.price)<=0)){showNotice('A product has no confirmed price. Please contact our team before ordering.');return;}
-  setOrderBusy(true);
-  try{
-   const rates={USD:1,CAD:1.39,MXN:17.2,GBP:.79,EUR:.92,RSD:108,INR:83.2};
-   const rate=rates[country]||1;
-   const subtotal=Number((items.reduce((sum,p)=>sum+(Number(p.price)||0)*Number(p.qty||1),0)*rate).toFixed(2));
-   const orderShippingSetting=shippingSetting;
-   const orderShippingCurrency=orderShippingSetting?currencyCodeOf(orderShippingSetting.currency):'USD';
-   const orderFreeShippingMinimum=orderShippingSetting?.free_shipping_minimum==null?null:Number(orderShippingSetting.free_shipping_minimum)*(rates[country]||1)/(rates[orderShippingCurrency]||1);
-   const shipping=orderShippingSetting?(orderFreeShippingMinimum!==null&&subtotal>=orderFreeShippingMinimum?0:Number(orderShippingSetting.shipping_charge||0)*(rates[country]||1)/(rates[orderShippingCurrency]||1)):0;
-   const tax=orderShippingSetting?Number((subtotal*Number(orderShippingSetting.duty_percent||0)/100).toFixed(2)):0;
-   const total=Number((subtotal+shipping+tax).toFixed(2));
-   const countryName=(countries.find(c=>c[1]===country)||[])[0]||address.country;
-   const orderNumber='GMX-'+new Date().toISOString().replace(/[-:T.Z]/g,'').slice(0,14)+'-'+Math.random().toString(36).slice(2,6).toUpperCase();
-   const shippingAddress={label:address.label||'Delivery',recipient_name:address.recipient_name,phone:address.phone,address_line1:address.address_line1,address_line2:address.address_line2||'',city:address.city,state:address.state,postal_code:address.postal_code,country:address.country};
-   const orderPayload={order_number:orderNumber,status:'Pending',payment_method:selectedPaymentMethod,payment_status:'Pending',payment_reference:paymentReference.trim()||null,customer_email:authUser.email||'',country:countryName,currency:country,subtotal,shipping,tax,total,shipping_address:shippingAddress,user_id:authUser.id};
-   const {data:createdOrder,error:orderError}=await supabase.from('orders').insert(orderPayload).select('id,order_number,status,created_at,total,currency').single();
-   if(orderError)throw orderError;
-   const orderLines=items.map(p=>({order_id:createdOrder.id,product_id:p.id,product_name:p.name,quantity:Number(p.qty||1),unit_price:Number((Number(p.price)*rate).toFixed(2)),variant_id:p.variantId||null,variant_size:p.variantSize||null,variant_color:p.variantColor||null,variant_sku:p.variantSku||null}));
-   const {error:itemsError}=await supabase.from('order_items').insert(orderLines);
-   if(itemsError){await supabase.from('orders').delete().eq('id',createdOrder.id).eq('user_id',authUser.id);throw itemsError;}
-   const confirmed={...createdOrder,order_number:createdOrder.order_number||orderNumber,status:'Pending',total,currency:country,shipping_address:shippingAddress};
-   setLastPlacedOrder({...confirmed,payment_method:selectedPaymentMethod,payment_status:'Pending',payment_reference:paymentReference.trim()||null});setPaymentReference('');setItems([]);localStorage.gmxCart='';setPage('order-success');showNotice('Your order has been placed successfully!');
-   const {data:updatedOrders}=await supabase.from('orders').select('*').eq('user_id',authUser.id).order('created_at',{ascending:false});
-   if(updatedOrders)setOrderHistory(updatedOrders);
-   const {data:updatedLines}=await supabase.from('order_items').select('*').eq('order_id',createdOrder.id);
-   if(updatedLines)setOrderItemsById(prev=>({...prev,[createdOrder.id]:updatedLines}));
-  }catch(error){console.error('Order placement failed:',error);showNotice('Order could not be placed: '+(error?.message||'Please try again.'));}
-  finally{setOrderBusy(false);}
- }
- async function saveCustomerProfile(e){
-  e.preventDefault();if(!authUser)return;setProfileBusy(true);setAuthMessage('');
-  const {error}=await supabase.from('customer_profiles').upsert({user_id:authUser.id,full_name:customerProfile.full_name.trim(),phone:customerProfile.phone.trim(),updated_at:new Date().toISOString()},{onConflict:'user_id'});
-  setProfileBusy(false);
-  setAuthMessage(error?'Profile save failed: '+error.message:'Your profile has been saved.');
- }
- function startNewAddress(){setEditingAddressId(null);setAddressForm({label:'Home',recipient_name:customerProfile.full_name||'',phone:customerProfile.phone||'',address_line1:'',address_line2:'',city:'',state:'',postal_code:'',country:(countries.find(c=>c[1]===country)||countries.find(c=>c[1]==='IN'))[0],is_default:addresses.length===0});setAddressFormOpen(true);}
- function startEditAddress(a){setEditingAddressId(a.id);setAddressForm({label:a.label||'Home',recipient_name:a.recipient_name||'',phone:a.phone||'',address_line1:a.address_line1||'',address_line2:a.address_line2||'',city:a.city||'',state:a.state||'',postal_code:a.postal_code||'',country:a.country||'India',is_default:!!a.is_default});setAddressFormOpen(true);}
- async function saveCustomerAddress(e){
-  e.preventDefault();if(!authUser)return;setAddressBusy(true);setAuthMessage('');
-  try{
-   if(addressForm.is_default){const {error:clearError}=await supabase.from('customer_addresses').update({is_default:false}).eq('user_id',authUser.id);if(clearError)throw clearError;}
-   const payload={...addressForm,user_id:authUser.id,label:addressForm.label.trim(),recipient_name:addressForm.recipient_name.trim(),phone:addressForm.phone.trim(),address_line1:addressForm.address_line1.trim(),address_line2:addressForm.address_line2.trim()||null,city:addressForm.city.trim(),state:addressForm.state.trim(),postal_code:addressForm.postal_code.trim(),country:addressForm.country.trim(),updated_at:new Date().toISOString()};
-   const result=editingAddressId?await supabase.from('customer_addresses').update(payload).eq('id',editingAddressId).eq('user_id',authUser.id):await supabase.from('customer_addresses').insert(payload);
-   if(result.error)throw result.error;
-   const {data,error}=await supabase.from('customer_addresses').select('*').eq('user_id',authUser.id).order('created_at',{ascending:false});if(error)throw error;
-   setAddresses(data||[]);setAddressFormOpen(false);setEditingAddressId(null);setAuthMessage(editingAddressId?'Address updated successfully.':'Address saved successfully.');
-  }catch(error){setAuthMessage('Address save failed: '+(error?.message||'Please try again.'));}
-  finally{setAddressBusy(false);}
- }
- async function deleteCustomerAddress(id){
-  if(!authUser||!window.confirm('Delete this delivery address?'))return;
-  const {error}=await supabase.from('customer_addresses').delete().eq('id',id).eq('user_id',authUser.id);
-  if(error){setAuthMessage('Address delete failed: '+error.message);return;}
-  setAddresses(prev=>prev.filter(a=>a.id!==id));setAuthMessage('Address deleted.');
- }
- async function makeDefaultAddress(id){
-  if(!authUser)return;setAddressBusy(true);
-  const {error:clearError}=await supabase.from('customer_addresses').update({is_default:false}).eq('user_id',authUser.id);
-  if(clearError){setAuthMessage('Could not update default address: '+clearError.message);setAddressBusy(false);return;}
-  const {error}=await supabase.from('customer_addresses').update({is_default:true,updated_at:new Date().toISOString()}).eq('id',id).eq('user_id',authUser.id);
-  if(error)setAuthMessage('Could not update default address: '+error.message);
-  else{setAddresses(prev=>prev.map(a=>({...a,is_default:a.id===id})));setAuthMessage('Default delivery address updated.');}
-  setAddressBusy(false);
- }
- async function submitCustomerAuth(e){
-  e.preventDefault();setAuthBusy(true);setAuthMessage('');
-  try{
-   if(authMode==='signup'){
-    const {data,error}=await supabase.auth.signUp({
-     email:authEmail.trim(),password:authPassword,
-     options:{data:{full_name:authName.trim()}}
-    });
-    if(error)throw error;
-    if(data?.session){setAuthUser(data.user);setAuthMessage('Account created successfully.');showNotice('Account successfully created!');}
-    else{setAuthMessage('Registration received. Please check your email for the confirmation link, then log in.');showNotice('Account created! Please verify your email.');setAuthMode('login');}
-   }else{
-    const {data,error}=await supabase.auth.signInWithPassword({email:authEmail.trim(),password:authPassword});
-    if(error)throw error;
-    setAuthUser(data.user);setAuthMessage('You are now logged in.');
-   }
-  }catch(error){setAuthMessage(error?.message||'Unable to complete sign in. Please try again.');}
-  finally{setAuthBusy(false);}
- }
- async function customerLogout(){
-  const {error}=await supabase.auth.signOut();
-  if(error){setAuthMessage(error.message);return;}
-  setAuthUser(null);setAuthPassword('');setAuthMessage('You have been logged out.');
- }
- function openFooterPage(label){
-  if(label==='Track My Order'){
-   setTrackOrderQuery('');setTrackOrderResult(null);setTrackOrderMessage('');
-   if(!authUser){setPage('account');showNotice('Please log in to view and track your orders.');return;}
-   setPage('track-order');return;
-  }
-  setPolicyPage(label);setPage('policy');
- }
- function findCustomerOrder(e){
-  e.preventDefault();
-  const query=trackOrderQuery.trim().toLowerCase();
-  if(!query){setTrackOrderMessage('Please enter your order number.');setTrackOrderResult(null);return;}
-  const found=orderHistory.find(o=>String(o.order_number||'').trim().toLowerCase()===query||String(o.tracking_number||'').trim().toLowerCase()===query);
-  setTrackOrderResult(found||null);
-  setTrackOrderMessage(found?'Order found.': 'No matching order was found in your account. Check the order number and try again.');
- }
- const products=useMemo(()=>catalog.filter(p=>(cat==='All Collections'||p.category===cat)&&(`${p.name} ${p.category} ${p.subcategory}`).toLowerCase().includes(search.toLowerCase())).sort((a,b)=>sort==='Price: Low to High'?(Number(a.price)||0)-(Number(b.price)||0):sort==='Price: High to Low'?(Number(b.price)||0)-(Number(a.price)||0):0),[catalog,cat,search,sort]);
- const count=items.reduce((s,p)=>s+p.qty,0),total=items.reduce((s,p)=>s+(Number(p.price)||0)*p.qty,0);const chosenVariant=activeVariants.find(v=>v.size===selectedSize&&v.color===selectedColor);const sizeOptions=[...new Set(activeVariants.map(v=>v.size).filter(Boolean))];const colorOptions=[...new Set(activeVariants.filter(v=>!selectedSize||v.size===selectedSize).map(v=>v.color).filter(Boolean))];
- function showNotice(message){setNotice(message);window.clearTimeout(noticeTimer.current);noticeTimer.current=window.setTimeout(()=>setNotice(''),2600)}
- function persistCart(v){setItems(v);localStorage.gmxCart=JSON.stringify(v)} function add(p,q=1,variant=null){let old=[...items],key=variant?.id||'base',idx=old.findIndex(x=>x.id===p.id&&(x.variantId||'base')===key);if(idx>=0)old[idx].qty+=q;else old.push({...p,qty:q,variantId:variant?.id||null,variantSize:variant?.size||'',variantColor:variant?.color||'',variantSku:variant?.sku||'',variantStock:variant?.stock??null,variantImage:variant?.image_url||''});persistCart(old);showNotice('Added to your bag')}
- function toggleWish(p){const alreadySaved=wish.includes(p.id);let v=alreadySaved?wish.filter(x=>x!==p.id):[...wish,p.id];setWish(v);localStorage.gmxWish=JSON.stringify(v);showNotice(alreadySaved?'Removed from wishlist':'Added to wishlist')}
- async function openProduct(p){setActive(p);setActiveImageIndex(0);setQty(1);setActiveVariants([]);setSelectedSize('');setSelectedColor('');if(needsVariants(p)){setVariantLoading(true);const {data,error}=await supabase.from('product_variants').select('*').eq('product_id',p.id).eq('active',true).order('size');if(!error&&Array.isArray(data)){setActiveVariants(data);if(data.length){setSelectedSize(data[0].size);setSelectedColor(data[0].color);}}else if(error){console.error('Variant load failed:',error.message);setNotice('Size & Colour options could not be loaded.');}setVariantLoading(false);}}
- const activeImages=active?[...new Set([...(Array.isArray(active.images)?active.images:[]),active.image].filter(x=>typeof x==='string'&&x.trim()))]:[];
- const wa='https://wa.me/916239686493';
- const cards=(list)=> <div className="product-grid">{list.map(p=><article className="product-card" key={p.id}><button className={'wish '+(wish.includes(p.id)?'selected':'')} onClick={()=>toggleWish(p)} aria-label="Wishlist"><Heart size={19} fill={wish.includes(p.id)?'currentColor':'none'}/></button><button className="photo" onClick={()=>openProduct(p)}><img src={p.image} alt={p.name}/><span className="quick">QUICK VIEW</span></button><div className="p-info"><small>{p.category}</small><button className="p-name" onClick={()=>openProduct(p)}>{p.name}</button><div className="rating"><Star size={13} fill="currentColor"/> {p.rating} <span>({p.reviews} reviews)</span></div><strong>{money(p.price,country)}</strong><div className="card-actions"><button className="outline" onClick={()=>add(p)}>ADD TO CART</button><button className="solid" onClick={()=>{add(p);setCartOpen(true)}}>BUY NOW</button></div></div></article>)}</div>;
- return <div>
- <div className="announce">AUTHENTIC INDIAN FINDS · INTERNATIONAL SHOPPING · WHOLESALE ENQUIRIES <span>✦</span> SHIPPING OPTIONS AT CHECKOUT</div>
- <header><div className="head-top"><button className="hamb" onClick={()=>setMobile(!mobile)}><Menu/></button><button className="brand" onClick={()=>{setPage('home');setCat('All Collections')}}><img className="brand-logo" src="/gmx-logo.jpg" alt="GMX FASHION INDIA logo"/></button><div className="search"><Search size={19}/><input value={search} onChange={e=>{setSearch(e.target.value);setPage('shop')}} placeholder="Search fashion, jewellery, spiritual essentials..."/><button onClick={()=>setPage('shop')}>SEARCH</button></div><div className="head-tools"><select value={country} onChange={e=>{setCountryManuallySelected(true);setCountry(e.target.value)}} aria-label="Currency">{countries.map(c=><option value={c[1]}>{c[0]} · {c[1]}</option>)}</select><select value={lang} onChange={e=>setLang(e.target.value)} aria-label="Language">{['English','Español','Français','Deutsch','Italiano','Português','Srpski','हिन्दी','العربية'].map(x=><option>{x}</option>)}</select><button onClick={()=>setPage('account')}><User/><span>Account</span></button><button onClick={()=>setPage('wishlist')}><Heart/><span>Wishlist</span><i>{wish.length}</i></button><button onClick={()=>setCartOpen(true)}><ShoppingBag/><span>Bag</span><i>{count}</i></button></div></div>
- <nav className={mobile?'nav show':'nav'}>{cats.slice(1).map(c=><button className={cat===c?'nav-active':''} onClick={()=>{setCat(c);setPage('shop');setMobile(false)}}>{c.toUpperCase()}</button>)}<button onClick={()=>setPage('wholesale')}>WHOLESALE</button><button onClick={()=>setPage('contact')}>CONTACT</button></nav></header>
- {page==='home'&&<><section className="hero"><div className="hero-copy"><div className="eyebrow">A WORLD OF INDIAN CRAFT & CULTURE</div><h1>INDIA'S HERITAGE.<br/><em>THE WORLD'S</em><br/>DESTINATION.</h1><p>Discover premium Indian fashion, traditional jewellery, spiritual essentials and lifestyle products — thoughtfully brought to customers worldwide.</p><div className="hero-buttons"><button className="solid" onClick={()=>{setCat('All Collections');setPage('shop')}}>SHOP COLLECTION <ArrowRight size={17}/></button><button className="light-btn" onClick={()=>setPage('wholesale')}>EXPLORE WHOLESALE</button></div><div className="hero-foot">CURATED IN INDIA <span/> MADE FOR THE WORLD</div></div><div className="hero-art"><div className="art-label">THE INDIA EDIT <b>01 / 06</b></div><div className="art-circle"></div><img src={catalog[0]?.image || seed[0]?.image || ''} alt="Indian fashion collection"/><div className="art-note">CRAFTED STORIES<br/><b>TRAVEL FURTHER.</b></div></div></section>
- <div className="trust-strip"><span><Truck/> International shipping support</span><span><ShieldCheck/> Secure shopping experience</span><span><Package/> Carefully selected collections</span><span><Globe/> Made in India, for the world</span></div>
- <section className="section"><div className="section-head"><div><label>FIND YOUR NEXT FAVOURITE</label><h2>Shop by <i>collection</i></h2></div><button className="text-link" onClick={()=>setPage('shop')}>VIEW ALL COLLECTIONS <ArrowRight size={16}/></button></div><div className="category-grid">{cats.slice(1).map((c,i)=><button className="category-tile" onClick={()=>{setCat(c);setPage('shop')}}><img src={(catalog[(i*3)%Math.max(catalog.length,1)]||seed[(i*3)%seed.length])?.image || ''}/><span>{c}</span><small>EXPLORE COLLECTION ↗</small></button>)}</div></section>
- <section className="section tinted"><div className="section-head"><div><label>FRESH FROM OUR CURATION</label><h2>New <i>arrivals</i></h2></div><button className="text-link" onClick={()=>setPage('shop')}>SHOP NEW ARRIVALS →</button></div>{cards(catalog.slice(0,4))}</section>
- <section className="editorial"><div><label>THE ART OF INDIAN LIVING</label><h2>Tradition, with<br/><i>a world view.</i></h2><p>From expressive ethnic wear to meaningful spiritual essentials, discover pieces that carry the warmth and artistry of India.</p><button className="solid" onClick={()=>{setCat('Spiritual & Puja Essentials');setPage('shop')}}>DISCOVER THE EDIT <ArrowRight size={16}/></button></div><img src={catalog[10]?.image || seed[10]?.image || ''}/></section>
- <section className="section"><div className="section-head"><div><label>OUR MOST-LOVED PICKS</label><h2>Customer <i>favourites</i></h2></div><button className="text-link" onClick={()=>setPage('shop')}>EXPLORE ALL →</button></div>{cards(catalog.slice(8,12))}</section>
- <section className="wholesale-band"><div><label>FOR RETAILERS · BOUTIQUES · DISTRIBUTORS</label><h2>Bring the best of India<br/>to your <i>market.</i></h2><p>Build a sourcing relationship with GMX FASHION INDIA.</p></div><button className="light-btn" onClick={()=>setPage('wholesale')}>BECOME A BUSINESS PARTNER <ArrowRight/></button></section>
- <section className="section why"><div className="section-head"><div><label>THE GMX PROMISE</label><h2>Rooted in India. <i>Ready for the world.</i></h2></div></div><div className="why-grid">{[['✦','Authentic Indian products','A thoughtful selection inspired by Indian craft, fashion and culture.'],['◇','Curated collections','Distinctive finds across fashion, accessories and lifestyle.'],['↗','International focus','Shopping support designed with global customers in mind.'],['♡','Personal assistance','Our team is here to help with product and bulk enquiries.']].map(x=><div><b>{x[0]}</b><h3>{x[1]}</h3><p>{x[2]}</p></div>)}</div></section>
- <section className="directors"><label>LEADERSHIP · GMX FASHION INDIA</label><div className="ticker"><div>{['Gurpreet Singh','Harvinder Singh','Jaspal Kaur','Upneet Kaur','Navneet Kaur', 'Gurpreet Singh','Harvinder Singh','Jaspal Kaur','Upneet Kaur','Navneet Kaur'].map(n=><span>{n} <i>✦</i></span>)}</div></div></section></>}
- {page==='shop'&&<section className="section shop-page"><div className="crumb">HOME / SHOP / {cat.toUpperCase()}</div><div className="section-head"><div><label>THE GMX COLLECTIONS</label><h2>{cat==='All Collections'?'Shop all':cat}</h2><p className="muted">{cat==='All Collections'?'Explore all six curated collections.':collectionDescription(cat)}</p><p className="muted">{products.length} curated products</p></div><select className="sort" value={sort} onChange={e=>setSort(e.target.value)}><option>Featured</option><option>Price: Low to High</option><option>Price: High to Low</option></select></div><div className="shop-layout"><aside><b>SHOP CATEGORIES</b>{cats.map(c=><button className={cat===c?'chosen':''} onClick={()=>setCat(c)}>{c}</button>)}<hr/><b>COLLECTION NOTES</b><p>Product details and availability are confirmed at checkout. Contact us for bulk quantities.</p></aside><div>{catalogLoading?<p>Loading collection...</p>:products.length?cards(products):<p>No products match this search. Try another term.</p>}</div></div></section>}
- {page==='wishlist'&&<section className="section"><div className="section-head"><div><label>SAVED FOR LATER</label><h2>Your <i>wishlist</i></h2></div></div>{cards(catalog.filter(p=>wish.includes(p.id)))}</section>}
- {page==='checkout'&&<section className="section form-page">
-  <div className="crumb">HOME / BAG / CHECKOUT</div><label>SECURE ORDER DETAILS</label><h2>Complete your <i>order.</i></h2>
-  <div style={{maxWidth:'900px',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:'22px',marginTop:'22px'}}>
-   <div className="contact-card"><h3>Delivery address</h3>
-    {addresses.length===0?<p>No saved address. Please add one in your Account.</p>:<div style={{display:'grid',gap:'12px'}}>{addresses.map(a=><label key={a.id} style={{display:'flex',gap:'10px',alignItems:'flex-start',border:'1px solid #e8e0d8',borderRadius:'9px',padding:'12px',cursor:'pointer'}}><input type="radio" name="checkout-address" checked={String(selectedAddressId)===String(a.id)} onChange={()=>setSelectedAddressId(a.id)}/><span><b>{a.label}{a.is_default?' · DEFAULT':''}</b><br/>{a.recipient_name} · {a.phone}<br/>{a.address_line1}{a.address_line2?', '+a.address_line2:''}, {a.city}, {a.state} {a.postal_code}, {a.country}</span></label>)}</div>}
-    <button className="outline" style={{marginTop:'14px'}} onClick={()=>setPage('account')}>MANAGE ADDRESSES</button>
-   </div>
-   <div className="contact-card"><h3>Order summary</h3>
-    {items.map((p,i)=><div key={`${p.id}-${p.variantId||'base'}-${i}`} style={{display:'flex',justifyContent:'space-between',gap:'12px',padding:'9px 0',borderBottom:'1px solid #eee'}}><span>{p.name} × {p.qty}<small style={{display:'block'}}>{p.variantSize||p.variantColor?`Size: ${p.variantSize||'—'} · Colour: ${p.variantColor||'—'}`:''}</small></span><b>{money(Number(p.price)*p.qty,country)}</b></div>)}
-    <p style={{display:'flex',justifyContent:'space-between'}}><span>Subtotal</span><b>{money(total,country)}</b></p>
-    <p style={{display:'flex',justifyContent:'space-between'}}><span>Shipping</span><b>{shippingLoading?'Loading…':shippingSetting?money(checkoutShipping,country):'To be confirmed'}</b></p>
-    <p style={{display:'flex',justifyContent:'space-between'}}><span>Import duty</span><b>{shippingSetting?money(checkoutDuty,country):'To be confirmed'}</b></p>
-    {shippingLoadError&&<p className="muted">{shippingLoadError}</p>}
-    {shippingSetting&&freeShippingReached&&<p className="muted">Free shipping applied.</p>}
-    <p style={{display:'flex',justifyContent:'space-between',fontSize:'18px',borderTop:'1px solid #ddd',paddingTop:'12px'}}><b>Estimated total</b><b>{money(shippingSetting?checkoutGrandTotal:checkoutSubtotal,country)}</b></p>
-    <div style={{marginTop:'18px',paddingTop:'16px',borderTop:'1px solid #e8e0d8'}}>
-     <h3 style={{marginBottom:'12px'}}>Choose payment method</h3>
-     <div style={{display:'grid',gap:'10px'}}>
-      {[['usdt','USDT · Polygon Network'],['mexico','Mexico Bank Transfer'],['usa','USA Bank Transfer']].map(([value,label])=><label key={value} style={{display:'flex',alignItems:'center',gap:'10px',border:'1px solid #e8e0d8',borderRadius:'9px',padding:'12px',cursor:'pointer'}}>
-       <input type="radio" name="payment-method" value={value} checked={selectedPaymentMethod===value} onChange={()=>setSelectedPaymentMethod(value)}/><b>{label}</b>
-      </label>)}
-     </div>
-     {selectedPaymentMethod==='usdt'&&<div style={{marginTop:'14px',padding:'14px',background:'#faf8f5',borderRadius:'9px',overflowWrap:'anywhere'}}>
-      <b>Pay with USDT</b><p style={{margin:'8px 0'}}>Network: <b>Polygon</b></p>
-      <p style={{margin:'8px 0'}}>Wallet address:<br/><b>0x64d850e3F9B4C71212379AaE11F2A4002c9FB8eB</b></p>
-      <button type="button" className="outline" onClick={()=>{if(navigator.clipboard?.writeText){navigator.clipboard.writeText('0x64d850e3F9B4C71212379AaE11F2A4002c9FB8eB').then(()=>showNotice('USDT wallet address copied.')).catch(()=>showNotice('Please copy the wallet address manually.'));}else showNotice('Please copy the wallet address manually.');}}>COPY WALLET ADDRESS</button>
-      <p className="muted" style={{marginBottom:0}}>Send USDT only through the Polygon network. Payments will remain pending until the transaction is verified by GMX FASHION INDIA.</p>
-     </div>}
-     {selectedPaymentMethod==='mexico'&&<div style={{marginTop:'14px',padding:'14px',background:'#faf8f5',borderRadius:'9px',overflowWrap:'anywhere'}}>
-      <b>Mexico Bank Transfer</b><p>Bank name: <b>Finco Pay</b></p><p>CLABE: <b>734180020021802466</b></p><p>Currency: MXN · Fee shown by account provider: Free</p>
-      <button type="button" className="outline" onClick={()=>{if(navigator.clipboard?.writeText){navigator.clipboard.writeText('734180020021802466').then(()=>showNotice('Mexico CLABE copied.')).catch(()=>showNotice('Please copy the CLABE manually.'));}else showNotice('Please copy the CLABE manually.');}}>COPY CLABE</button>
-     </div>}
-     {selectedPaymentMethod==='usa'&&<div style={{marginTop:'14px',padding:'14px',background:'#faf8f5',borderRadius:'9px',overflowWrap:'anywhere'}}>
-      <b>United States Bank Transfer</b><p>Beneficiary name: <b>Gurpreet Singh</b></p><p>Bank name: <b>Lead Bank</b></p><p>Routing number: <b>101019644</b></p><p>Account number: <b>219541391184</b></p><p>Account type: <b>Checking</b></p><p>Account provider fee shown: 3 USD</p>
-      <button type="button" className="outline" onClick={()=>{if(navigator.clipboard?.writeText){navigator.clipboard.writeText('Routing number: 101019644 | Account number: 219541391184').then(()=>showNotice('USA bank details copied.')).catch(()=>showNotice('Please copy the bank details manually.'));}else showNotice('Please copy the bank details manually.');}}>COPY BANK DETAILS</button>
-     </div>}
-     <label style={{display:'block',marginTop:'14px'}}>Transaction ID / Bank Transfer Reference (optional)
-      <input value={paymentReference} onChange={e=>setPaymentReference(e.target.value)} placeholder={selectedPaymentMethod==='usdt'?'Paste USDT transaction hash (TXID)':'Enter bank transfer reference'} maxLength={180} style={{width:'100%',marginTop:'7px',padding:'12px',border:'1px solid #ddd',borderRadius:'8px'}} />
-     </label>
-    </div>
-    <p className="muted">After sending payment, enter your transaction ID or bank transfer reference above. Orders remain Pending Payment until GMX manually verifies the payment. Do not send USDT on any network other than Polygon. Import duty and final shipping charges may be confirmed before dispatch.</p>
-    <button className="solid full" disabled={orderBusy||!items.length||!selectedAddressId||shippingLoading||!shippingSetting} onClick={placeCustomerOrder}>{orderBusy?'PLACING ORDER...':'CONFIRM ORDER · PAYMENT PENDING'}</button>
-   </div>
-  </div>
-  <button className="text-link" style={{marginTop:'20px'}} onClick={()=>{setPage('home');setCartOpen(true)}}>← BACK TO SHOPPING BAG</button>
- </section>}
- {page==='order-success'&&<section className="section form-page" style={{textAlign:'center',maxWidth:'760px',margin:'0 auto'}}>
-  <div style={{fontSize:'48px',color:'#267a4b'}}>✓</div><label>ORDER RECEIVED</label><h2>Your order is <i>confirmed.</i></h2>
-  <p>Thank you for shopping with GMX FASHION INDIA. Your order has been saved and is currently awaiting processing.</p>
-  {lastPlacedOrder&&<div className="contact-card" style={{textAlign:'left',margin:'24px auto',maxWidth:'520px'}}><p><b>Order number:</b> {lastPlacedOrder.order_number}</p><p><b>Status:</b> Pending</p><p><b>Total:</b> {new Intl.NumberFormat(undefined,{style:'currency',currency:lastPlacedOrder.currency||country}).format(Number(lastPlacedOrder.total)||0)}</p></div>}
-  <p className="muted">Your order is saved. Payment remains pending until our team verifies the transfer in the receiving wallet or bank account. Our team may confirm final shipping charges, duties and taxes before dispatch.</p>
-  <button className="solid" onClick={()=>setPage('account')}>VIEW MY ORDERS</button> <button className="outline" onClick={()=>{setPage('shop');setCat('All Collections')}}>CONTINUE SHOPPING</button>
- </section>}
- {page==='wholesale'&&<section className="section form-page"><label>GLOBAL SOURCING · WHOLESALE & EXPORT</label><h2>Become our international<br/><i>business partner.</i></h2><p>Partner with GMX FASHION INDIA to source authentic Indian fashion, spiritual products, traditional accessories and lifestyle collections for your market.</p><form onSubmit={e=>{e.preventDefault();setNotice('Thank you. Your enquiry has been prepared. Please send it to our team on WhatsApp.');}}><div className="form-grid">{['Full Name','Company Name','Country','Email','WhatsApp Number','Product Category','Required Quantity'].map((x,i)=><label>{x}<input required={i===0||i===3} placeholder={x}/></label>)}</div><label>Message<textarea placeholder="Tell us about the products and quantities you are interested in."/></label><button className="solid">SUBMIT ENQUIRY <ArrowRight/></button><a className="wa-inline" href={wa} target="_blank">OR CHAT WITH OUR TEAM ON WHATSAPP</a></form></section>}
- {page==='contact'&&<section className="section form-page"><label>WE'D LOVE TO HEAR FROM YOU</label><h2>Let's <i>connect.</i></h2><p>For product questions, order support and international business enquiries.</p><div className="contact-card"><h3>GMX FASHION INDIA</h3><p><b>India Head Office:</b><br/>91, Village Kandala, District Mohali, Punjab, India – 140306</p><p><b>Mexico Business Address:</b><br/>GMX Induropa<br/>282, Calle Camino de la Cooperacion,<br/>Colonia-Campestre Aragon,<br/>Ciudad de Mexico, Mexico – 07530</p><p>WhatsApp: +91 62396 86493</p><a href={wa} target="_blank" className="solid">CHAT ON WHATSAPP</a></div></section>}
- {page==='account'&&<section className="section form-page">
-  <label>YOUR GMX ACCOUNT</label><h2>{authUser?<>Welcome <i>back.</i></>:<>Welcome to <i>GMX.</i></>}</h2>
-  {authUser?
-   <div style={{maxWidth:'820px',display:'grid',gap:'22px'}}>
-    <div className="contact-card">
-     <h3>Account details</h3><p><b>Email:</b> {authUser.email}</p>
-     <form onSubmit={saveCustomerProfile} style={{display:'grid',gap:'12px',marginTop:'18px'}}>
-      <label>Full Name<input value={customerProfile.full_name} onChange={e=>setCustomerProfile(v=>({...v,full_name:e.target.value}))} placeholder="Your full name" required autoComplete="name"/></label>
-      <label>Mobile Number<input type="tel" value={customerProfile.phone} onChange={e=>setCustomerProfile(v=>({...v,phone:e.target.value}))} placeholder="Country code + mobile number" required autoComplete="tel"/></label>
-      <button className="solid" type="submit" disabled={profileBusy}>{profileBusy?'SAVING...':'SAVE PROFILE'}</button>
-     </form>
-     <div style={{marginTop:'22px',paddingTop:'18px',borderTop:'1px solid #e8e0d8'}}>
-       <h3>My Orders</h3>
-       {ordersBusy?<p>Loading your orders...</p>:orderHistory.length===0?<p>You have not placed any orders yet.</p>:<div style={{display:'grid',gap:'14px',marginTop:'14px'}}>{orderHistory.map(o=><div key={o.id} style={{border:'1px solid #e8e0d8',borderRadius:'10px',padding:'15px'}}>
-        <div style={{display:'flex',justifyContent:'space-between',gap:'12px',flexWrap:'wrap'}}><b>{o.order_number||'Order'}</b><span style={{border:'1px solid #d8c7ae',borderRadius:'20px',padding:'4px 10px',fontSize:'12px'}}>{o.status||'Pending'}</span></div>
-        <p style={{margin:'8px 0'}}>Date: {o.created_at?new Date(o.created_at).toLocaleString():'—'} · Total: {new Intl.NumberFormat(undefined,{style:'currency',currency:o.currency||country}).format(Number(o.total)||0)}</p>
-        <p style={{margin:'6px 0',fontSize:'14px'}}>Payment: <b>{{usdt:'USDT · Polygon',mexico:'Mexico Bank Transfer',usa:'USA Bank Transfer'}[o.payment_method]||o.payment_method||'Not recorded'}</b> · Payment status: <b>{o.payment_status||'Pending'}</b></p>
-        {(orderItemsById[o.id]||[]).map(line=><p key={line.id} style={{margin:'5px 0',fontSize:'14px'}}>{line.product_name} × {line.quantity}{line.variant_size||line.variant_color?` · ${line.variant_size||''} ${line.variant_color||''}`:''}</p>)}
-        {(o.courier_name||o.tracking_number||o.tracking_url||o.shipped_at)&&<div style={{marginTop:'12px',padding:'13px',border:'1px solid #dbeafe',borderRadius:'10px',background:'#f8fbff'}}>
-         <b style={{display:'block',marginBottom:'8px'}}>Shipment & Tracking</b>
-         {o.courier_name&&<p style={{margin:'4px 0'}}>Courier: <b>{o.courier_name}</b></p>}
-         {o.tracking_number&&<p style={{margin:'4px 0'}}>Tracking Number: <b>{o.tracking_number}</b></p>}
-         {o.shipped_at&&<p style={{margin:'4px 0'}}>Dispatch Date: {new Date(o.shipped_at).toLocaleDateString()}</p>}
-         {o.tracking_url&&/^https?:\/\//i.test(o.tracking_url)&&<a href={o.tracking_url} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',marginTop:'8px',padding:'9px 14px',borderRadius:'20px',background:'#174ea6',color:'#fff',textDecoration:'none'}}>TRACK SHIPMENT ↗</a>}
-        </div>}
-        <details style={{marginTop:'9px'}}><summary style={{cursor:'pointer'}}>Delivery address</summary><p>{typeof o.shipping_address==='object'&&o.shipping_address?`${o.shipping_address.recipient_name||''}, ${o.shipping_address.address_line1||''} ${o.shipping_address.address_line2||''}, ${o.shipping_address.city||''}, ${o.shipping_address.state||''} ${o.shipping_address.postal_code||''}, ${o.shipping_address.country||''}`:String(o.shipping_address||'')}</p></details>
-       </div>)}</div>}
-      </div>
-     <button className="outline" onClick={()=>setCartOpen(true)}>VIEW MY BAG</button>
-     <button className="outline full" style={{marginTop:'12px'}} onClick={customerLogout}>LOG OUT</button>
-    </div>
-    <div className="contact-card">
-     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px',flexWrap:'wrap'}}><h3 style={{margin:0}}>My delivery addresses</h3><button className="solid" type="button" onClick={startNewAddress}>+ ADD ADDRESS</button></div>
-     {addresses.length===0?<p style={{marginTop:'18px'}}>You have not saved a delivery address yet.</p>:<div style={{display:'grid',gap:'14px',marginTop:'18px'}}>{addresses.map(a=><div key={a.id} style={{border:'1px solid #e8e0d8',borderRadius:'10px',padding:'16px'}}><div style={{display:'flex',justifyContent:'space-between',gap:'10px',flexWrap:'wrap'}}><b>{a.label} {a.is_default?' · DEFAULT':''}</b><div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}><button className="outline" type="button" onClick={()=>startEditAddress(a)}>EDIT</button><button className="outline" type="button" onClick={()=>deleteCustomerAddress(a.id)}>DELETE</button></div></div><p style={{margin:'10px 0 4px'}}><b>{a.recipient_name}</b> · {a.phone}</p><p style={{margin:0}}>{a.address_line1}{a.address_line2?', '+a.address_line2:''}, {a.city}, {a.state} {a.postal_code}, {a.country}</p>{!a.is_default&&<button className="text-link" type="button" disabled={addressBusy} onClick={()=>makeDefaultAddress(a.id)} style={{marginTop:'10px'}}>MAKE DEFAULT ADDRESS</button>}</div>)}</div>}
-     {addressFormOpen&&<form onSubmit={saveCustomerAddress} style={{display:'grid',gap:'12px',marginTop:'22px',paddingTop:'18px',borderTop:'1px solid #e8e0d8'}}>
-      <h3>{editingAddressId?'Edit delivery address':'Add delivery address'}</h3>
-      <label>Address Label<select value={addressForm.label} onChange={e=>setAddressForm(v=>({...v,label:e.target.value}))}><option>Home</option><option>Office</option><option>Other</option></select></label>
-      <label>Recipient Name<input value={addressForm.recipient_name} onChange={e=>setAddressForm(v=>({...v,recipient_name:e.target.value}))} required/></label>
-      <label>Mobile Number<input type="tel" value={addressForm.phone} onChange={e=>setAddressForm(v=>({...v,phone:e.target.value}))} required/></label>
-      <label>Address Line 1<input value={addressForm.address_line1} onChange={e=>setAddressForm(v=>({...v,address_line1:e.target.value}))} placeholder="House / Building / Street" required/></label>
-      <label>Address Line 2 (Optional)<input value={addressForm.address_line2} onChange={e=>setAddressForm(v=>({...v,address_line2:e.target.value}))} placeholder="Area / Landmark"/></label>
-      <div className="form-grid"><label>City<input value={addressForm.city} onChange={e=>setAddressForm(v=>({...v,city:e.target.value}))} required autoComplete="address-level2"/></label><label>Country<select value={addressForm.country} onChange={e=>setAddressForm(v=>({...v,country:e.target.value,state:''}))} required autoComplete="country-name"><option value="">Select country</option>{countries.map(c=><option key={c[3]} value={c[0]}>{c[0]}</option>)}</select></label><label>State / Province{STATE_OPTIONS[countryByName(addressForm.country)?.[3]]?<select value={addressForm.state} onChange={e=>setAddressForm(v=>({...v,state:e.target.value}))} required autoComplete="address-level1"><option value="">Select state / province</option>{STATE_OPTIONS[countryByName(addressForm.country)[3]].map(st=><option key={st}>{st}</option>)}</select>:<input value={addressForm.state} onChange={e=>setAddressForm(v=>({...v,state:e.target.value}))} required autoComplete="address-level1" placeholder="Enter state / province"/>}</label><label>Postal / ZIP Code<input value={addressForm.postal_code} onChange={e=>setAddressForm(v=>({...v,postal_code:e.target.value}))} required autoComplete="postal-code"/></label></div>
-      <label style={{display:'flex',alignItems:'center',gap:'9px'}}><input type="checkbox" checked={addressForm.is_default} onChange={e=>setAddressForm(v=>({...v,is_default:e.target.checked}))}/> Set as default delivery address</label>
-      <div style={{display:'flex',gap:'10px',flexWrap:'wrap'}}><button className="solid" type="submit" disabled={addressBusy}>{addressBusy?'SAVING...':'SAVE ADDRESS'}</button><button className="outline" type="button" onClick={()=>{setAddressFormOpen(false);setEditingAddressId(null)}}>CANCEL</button></div>
-     </form>}
-    </div>
-   </div>:
-   <div className="contact-card" style={{maxWidth:'560px'}}>
-    <div style={{display:'flex',gap:'12px',marginBottom:'20px',flexWrap:'wrap'}}>
-     <button className={authMode==='login'?'solid':'outline'} onClick={()=>{setAuthMode('login');setAuthMessage('')}}>LOG IN</button>
-     <button className={authMode==='signup'?'solid':'outline'} onClick={()=>{setAuthMode('signup');setAuthMessage('')}}>CREATE ACCOUNT</button>
-    </div>
-    <form onSubmit={submitCustomerAuth}>
-     {authMode==='signup'&&<label>Full Name<input value={authName} onChange={e=>setAuthName(e.target.value)} placeholder="Your full name" required autoComplete="name"/></label>}
-     <label>Email Address<input type="email" value={authEmail} onChange={e=>setAuthEmail(e.target.value)} placeholder="you@example.com" required autoComplete="email"/></label>
-     <label>Password<input type="password" value={authPassword} onChange={e=>setAuthPassword(e.target.value)} placeholder="At least 6 characters" required minLength={6} autoComplete={authMode==='signup'?'new-password':'current-password'}/></label>
-     <button className="solid full" type="submit" disabled={authBusy}>{authBusy?'PLEASE WAIT...':authMode==='signup'?'CREATE ACCOUNT':'LOG IN'}</button>
-    </form>
-    {authMessage&&<p role="status" style={{marginTop:'14px'}}>{authMessage}</p>}
-    <p style={{marginTop:'18px'}}>You can also continue shopping as a guest. Your bag is saved on this device.</p>
-    <button className="outline full" onClick={()=>setCartOpen(true)}>VIEW MY BAG</button>
-   </div>}
-  </section>}
- {page==='track-order'&&<section className="section form-page" style={{maxWidth:'900px',margin:'0 auto'}}>
-  <div className="crumb">HOME / CUSTOMER CARE / TRACK MY ORDER</div>
-  <label>CUSTOMER CARE</label><h2>Track your <i>order.</i></h2>
-  <p>Enter the order number shown in your order confirmation. For privacy, this page searches only orders in your signed-in GMX account.</p>
-  {ordersBusy?<p>Loading your orders...</p>:<form onSubmit={findCustomerOrder} style={{display:'flex',gap:'10px',flexWrap:'wrap',margin:'22px 0'}}>
-   <input value={trackOrderQuery} onChange={e=>{setTrackOrderQuery(e.target.value);setTrackOrderMessage('');setTrackOrderResult(null)}} placeholder="Enter order number (e.g. GMX-...)" required style={{flex:'1 1 260px',minWidth:0,padding:'13px',border:'1px solid #ddd',borderRadius:'8px'}}/>
-   <button className="solid" type="submit">TRACK ORDER</button>
-  </form>}
-  {trackOrderMessage&&<p role="status">{trackOrderMessage}</p>}
-  {trackOrderResult&&<div className="contact-card" style={{marginTop:'18px'}}>
-   <div style={{display:'flex',justifyContent:'space-between',gap:'12px',flexWrap:'wrap'}}><h3 style={{margin:0}}>{trackOrderResult.order_number||'Your order'}</h3><b>{trackOrderResult.status||'Pending'}</b></div>
-   <p>Date: {trackOrderResult.created_at?new Date(trackOrderResult.created_at).toLocaleString():'—'}</p>
-   <p>Total: {new Intl.NumberFormat(undefined,{style:'currency',currency:trackOrderResult.currency||country}).format(Number(trackOrderResult.total)||0)}</p>
-   {(orderItemsById[trackOrderResult.id]||[]).map(line=><p key={line.id}>{line.product_name} × {line.quantity}</p>)}
-   {(trackOrderResult.courier_name||trackOrderResult.tracking_number||trackOrderResult.tracking_url)&&<div style={{borderTop:'1px solid #eee',paddingTop:'12px',marginTop:'12px'}}>
-    {trackOrderResult.courier_name&&<p>Courier: <b>{trackOrderResult.courier_name}</b></p>}
-    {trackOrderResult.tracking_number&&<p>Tracking number: <b>{trackOrderResult.tracking_number}</b></p>}
-    {trackOrderResult.tracking_url&&/^https?:\/\//i.test(trackOrderResult.tracking_url)&&<a href={trackOrderResult.tracking_url} target="_blank" rel="noopener noreferrer">TRACK WITH COURIER ↗</a>}
-   </div>}
-   {!trackOrderResult.tracking_number&&!trackOrderResult.tracking_url&&<p className="muted">Shipment tracking details will appear here after dispatch details are added to your order.</p>}
-  </div>}
-  <button className="outline" style={{marginTop:'18px'}} onClick={()=>setPage('account')}>VIEW MY ACCOUNT & ORDERS</button>
- </section>}
- {page==='policy'&&<section className="section form-page" style={{maxWidth:'900px',margin:'0 auto'}}>
-  <div className="crumb">HOME / CUSTOMER CARE / {policyPage.toUpperCase()}</div>
-  <label>GMX FASHION INDIA · CUSTOMER CARE</label><h2>{policyPage}</h2>
-  {policyPage==='Shipping Policy'&&<>
-   <p>Shipping availability and charges depend on the delivery destination. Where configured, the checkout displays the applicable shipping charge and estimated import duty. If a destination rate is not configured, our team will confirm the applicable charges before dispatch.</p>
-   <p>International delivery timelines and final charges should be confirmed with our team for your destination before the order is dispatched.</p>
-  </>}
-  {policyPage==='Returns & Refunds'&&<>
-   <p>For return, replacement or refund enquiries, please contact GMX FASHION INDIA with your order number and the reason for your request.</p>
-   <p>Return eligibility, timelines and any applicable conditions must be confirmed by our customer-care team for the specific order before a return is sent.</p>
-  </>}
-  {policyPage==='Privacy Policy'&&<>
-   <p>GMX FASHION INDIA uses the account, contact and delivery information you provide to support account access, order processing and customer service.</p>
-   <p>For questions about your information or a privacy-related request, please contact our team using the WhatsApp contact details on this website.</p>
-  </>}
-  {policyPage==='Terms & Conditions'&&<>
-   <p>Product availability, order details and delivery information are subject to confirmation by GMX FASHION INDIA.</p>
-   <p>At present, online payment is not collected through this website. Orders are recorded as pending while our team confirms shipping, duties, taxes and payment arrangements with the customer.</p>
-   <p>Please contact our team if you need clarification about a product or order before proceeding.</p>
-  </>}
-  <div className="contact-card" style={{marginTop:'22px'}}><h3>Need help?</h3><p>Share your order number or enquiry with our customer-care team.</p><a className="solid" href={wa} target="_blank" rel="noopener noreferrer">CONTACT US ON WHATSAPP</a></div>
-  <button className="outline" style={{marginTop:'18px'}} onClick={()=>setPage('home')}>BACK TO HOME</button>
- </section>}
- <footer><div className="footer-main"><div className="footer-brand"><span className="brand-mark">GMX</span><h3>FASHION INDIA</h3><p>Bringing India's Heritage & Fashion to the World.</p><a href={wa} target="_blank">WHATSAPP: +91 62396 86493</a></div><div><b>EXPLORE</b>{cats.slice(1,6).map(c=><button onClick={()=>{setCat(c);setPage('shop')}}>{c}</button>)}</div><div><b>CUSTOMER CARE</b>{['Track My Order','Shipping Policy','Returns & Refunds','Privacy Policy','Terms & Conditions'].map(c=><button key={c} onClick={()=>openFooterPage(c)}>{c}</button>)}</div><div><b>BUSINESS</b><button onClick={()=>setPage('wholesale')}>Wholesale & Export</button><button onClick={()=>setPage('wholesale')}>Become a Distributor</button><button onClick={()=>setPage('contact')}>Contact Us</button><p><b>India:</b><br/>91, Village Kandala,<br/>District Mohali, Punjab 140306, India</p><p><b>Mexico:</b><br/>GMX Induropa,<br/>282, Calle Camino de la Cooperacion,<br/>Colonia-Campestre Aragon,<br/>Ciudad de Mexico 07530, Mexico</p></div></div><div className="footer-bottom"><span>© 2026 GMX FASHION INDIA. ALL RIGHTS RESERVED.</span><span>MADE WITH CARE IN INDIA ✦</span></div></footer>
- <a className="whatsapp" href={wa} target="_blank" aria-label="WhatsApp"><MessageCircle/> <span>Chat with us</span></a>
- {cartOpen&&<div className="overlay" onClick={()=>setCartOpen(false)}><aside className="cart-drawer" onClick={e=>e.stopPropagation()}><div className="drawer-head"><h2>Your bag <small>({count} items)</small></h2><button onClick={()=>setCartOpen(false)}><X/></button></div>{items.length? <>{items.map(p=><div className="cart-line"><img src={p.variantImage||p.image}/><div><b>{p.name}</b>{(p.variantSize||p.variantColor)&&<small style={{display:'block',margin:'4px 0'}}>Size: {p.variantSize||'—'} · Colour: {p.variantColor||'—'}</small>}<strong>{Number(p.price)>0?money(Number(p.price),country):'Price on request'}</strong><div className="qty"><button onClick={()=>persistCart(items.map(x=>x.id===p.id&&(x.variantId||'base')===(p.variantId||'base')?{...x,qty:Math.max(1,x.qty-1)}:x))}><Minus size={13}/></button>{p.qty}<button onClick={()=>persistCart(items.map(x=>x.id===p.id&&(x.variantId||'base')===(p.variantId||'base')?{...x,qty:x.qty+1}:x))}><Plus size={13}/></button><button className="remove" onClick={()=>persistCart(items.filter(x=>!(x.id===p.id&&(x.variantId||'base')===(p.variantId||'base'))))}>Remove</button></div></div></div>)}<div className="cart-total"><span>Subtotal · indicative</span><b>{money(total,country)}</b></div><p className="muted">Shipping, duties and applicable taxes are calculated after destination and shipping method are confirmed.</p><button className="solid full" onClick={openCheckout}>CONTINUE TO CHECKOUT</button></>:<div className="empty"><ShoppingBag size={36}/><h3>Your bag is waiting</h3><p>Explore the collection and add something special.</p><button className="solid" onClick={()=>{setCartOpen(false);setPage('shop')}}>START SHOPPING</button></div>}</aside></div>}
- {active&&<div className="overlay" onClick={()=>setActive(null)}><div className="product-modal" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={()=>setActive(null)}><X/></button><div className="product-gallery" style={{display:'grid',gap:'12px',alignContent:'start',minWidth:0}}>
-   <div style={{width:'100%',aspectRatio:'4 / 5',background:'#f7f4f0',borderRadius:'12px',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center'}}>
-    <img src={activeImages[activeImageIndex]||active.image} alt={`${active.name} - image ${activeImageIndex+1}`} style={{width:'100%',height:'100%',objectFit:'contain'}}/>
-   </div>
-   {activeImages.length>1&&<div aria-label="Product images" style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(64px,1fr))',gap:'8px'}}>
-    {activeImages.map((src,index)=><button key={`${src}-${index}`} type="button" onClick={()=>setActiveImageIndex(index)} aria-label={`View product image ${index+1}`} aria-pressed={activeImageIndex===index} style={{padding:'3px',border:activeImageIndex===index?'2px solid #b7864b':'1px solid #e3ddd5',borderRadius:'8px',background:'#fff',cursor:'pointer',height:'76px',overflow:'hidden'}}>
-     <img src={src} alt={`${active.name} thumbnail ${index+1}`} style={{width:'100%',height:'100%',objectFit:'contain'}}/>
-    </button>)}
-   </div>}
-   {activeImages.length>1&&<small style={{color:'#777'}}>{activeImageIndex+1} of {activeImages.length} photos · Select a thumbnail to view</small>}
-  </div><div><label>{active.category}</label><h2>{active.name}</h2><div className="rating"><Star fill="currentColor"/> {active.rating} · {active.reviews} reviews</div><h3>{Number(active.price)>0?money(Number(active.price),country):'Price on request'}</h3><p>{active.description}</p><p><b>Origin:</b> {active.origin}</p>{needsVariants(active)&&<div className="variant-picker" style={{margin:'18px 0',padding:'14px',border:'1px solid #e8e0d8',borderRadius:'10px'}}><b style={{display:'block',marginBottom:'8px'}}>SIZE & COLOUR</b>{variantLoading?<p>Loading available sizes and colours...</p>:activeVariants.length===0?<p>Size and colour options are not available for this product yet. Please contact us.</p>:<><label style={{display:'block',margin:'8px 0 5px'}}>Size</label><select value={selectedSize} onChange={e=>{setSelectedSize(e.target.value);const next=activeVariants.find(v=>v.size===e.target.value);if(next)setSelectedColor(next.color)}} style={{width:'100%',padding:'11px',border:'1px solid #ddd',borderRadius:'6px'}}>{sizeOptions.map(v=><option key={v} value={v}>{v}</option>)}</select><label style={{display:'block',margin:'10px 0 5px'}}>Colour</label><select value={selectedColor} onChange={e=>setSelectedColor(e.target.value)} style={{width:'100%',padding:'11px',border:'1px solid #ddd',borderRadius:'6px'}}>{colorOptions.map(v=><option key={v} value={v}>{v}</option>)}</select><p style={{marginTop:'10px'}}><b>Variant stock:</b> {chosenVariant?.stock??0}{chosenVariant?.sku?<> · <b>SKU:</b> {chosenVariant.sku}</>:null}</p></>}</div>}<p><b>Stock status:</b> {chosenVariant? (chosenVariant.stock>0?'Available':'Out of stock'):(active.stock>0?'Available – subject to confirmation':'Contact us')}</p><div className="qty big"><button onClick={()=>setQty(Math.max(1,qty-1))}><Minus/></button>{qty}<button onClick={()=>setQty(qty+1)}><Plus/></button></div><button className="solid full" disabled={variantLoading||(needsVariants(active)&&(!chosenVariant||chosenVariant.stock<1))} onClick={()=>{add(active,qty,chosenVariant||null);setActive(null)}}>ADD TO CART</button><button className="outline full" onClick={()=>toggleWish(active)}>♡ ADD TO WISHLIST</button><button className="text-link" onClick={()=>navigator.share?.({title:active.name,text:active.description,url:location.href})}>SHARE PRODUCT ↗</button></div></div></div>}
- {notice&&<div className="toast">{notice}</div>}
- </div>
+function collectionForProduct(p){const raw=String(p.category||'').toLowerCase();const words=`${p.name||''} ${p.subcategory||''} ${p.description||''}`;const all=(raw+' '+words).toLowerCase();if(/jewell|jhumka|necklace|earring|bracelet|pendant/.test(all))return 'Fine Jewelry Collection';if(/perfume|attar|fragrance|agarbatti|incense|brass holder/.test(all))return 'Aromatics & Lifestyle Fragrances';if(/puja|spiritual|rudraksha|tulsi|shankh|conch|dhoti|chanting|altar|om mala/.test(all))return 'Spiritual & Puja Essentials';if(/muslim|abaya|hijab|prayer mat|topi|punjabi jutti|japanese fusion|handicraft/.test(all))return 'Cultural & Multireligious Lines';if(westernTerms.test(words)||/leather/.test(raw))return 'Modern Western & Streetwear';if(/women|men|apparel|clothing|shawl|shrug|poncho|kaftan|cord set/.test(all))return 'Luxury Premium Apparels & Layering';if(categories.includes(p.category))return p.category;return 'Cultural & Multireligious Lines';}
+const blank = { id:'', originalName:'', name:'', sku:'', slug:'', category:'Luxury Premium Apparels & Layering', subcategory:'', description:'', price:'', stock:0, material:'', origin:'India', image:'', images:[], active:true, rating:'', reviews:0 };
+const blankVariant = { size:'', color:'', sku:'', stock:0, image_url:'' };
+const ORDER_STATUSES = ['Pending','Confirmed','Processing','Shipped','Delivered','Cancelled'];
+
+// Country and currency options for the GMX target markets and commonly used destinations.
+// Selecting a country fills its ISO-2 country code and default currency automatically.
+const COUNTRY_OPTIONS = [
+  ['Argentina','AR','ARS'],['Australia','AU','AUD'],['Austria','AT','EUR'],['Bangladesh','BD','BDT'],['Belgium','BE','EUR'],
+  ['Brazil','BR','BRL'],['Bulgaria','BG','BGN'],['Cambodia','KH','KHR'],['Canada','CA','CAD'],['Chile','CL','CLP'],
+  ['China','CN','CNY'],['Colombia','CO','COP'],['Croatia','HR','EUR'],['Cyprus','CY','EUR'],['Czechia','CZ','CZK'],
+  ['Denmark','DK','DKK'],['Egypt','EG','EGP'],['Estonia','EE','EUR'],['Finland','FI','EUR'],['France','FR','EUR'],
+  ['Germany','DE','EUR'],['Greece','GR','EUR'],['Hong Kong','HK','HKD'],['Hungary','HU','HUF'],['Iceland','IS','ISK'],
+  ['India','IN','INR'],['Indonesia','ID','IDR'],['Ireland','IE','EUR'],['Israel','IL','ILS'],['Italy','IT','EUR'],
+  ['Japan','JP','JPY'],['Kenya','KE','KES'],['Latvia','LV','EUR'],['Lithuania','LT','EUR'],['Luxembourg','LU','EUR'],
+  ['Malaysia','MY','MYR'],['Malta','MT','EUR'],['Mexico','MX','MXN'],['Nepal','NP','NPR'],['Netherlands','NL','EUR'],
+  ['New Zealand','NZ','NZD'],['Nigeria','NG','NGN'],['Norway','NO','NOK'],['Pakistan','PK','PKR'],['Philippines','PH','PHP'],
+  ['Poland','PL','PLN'],['Portugal','PT','EUR'],['Romania','RO','RON'],['Saudi Arabia','SA','SAR'],['Serbia','RS','RSD'],
+  ['Singapore','SG','SGD'],['Slovakia','SK','EUR'],['Slovenia','SI','EUR'],['South Africa','ZA','ZAR'],['South Korea','KR','KRW'],
+  ['Spain','ES','EUR'],['Sri Lanka','LK','LKR'],['Sweden','SE','SEK'],['Switzerland','CH','CHF'],['Thailand','TH','THB'],
+  ['Turkey','TR','TRY'],['Ukraine','UA','UAH'],['United Arab Emirates','AE','AED'],['United Kingdom','GB','GBP'],
+  ['United States','US','USD'],['Vietnam','VN','VND']
+].map(([name, code, currency]) => ({name, code, currency})).sort((a,b)=>a.name.localeCompare(b.name));
+const CURRENCY_OPTIONS = [
+  ['AED','UAE Dirham'],['ARS','Argentine Peso'],['AUD','Australian Dollar'],['BDT','Bangladeshi Taka'],['BGN','Bulgarian Lev'],
+  ['BRL','Brazilian Real'],['CAD','Canadian Dollar'],['CHF','Swiss Franc'],['CLP','Chilean Peso'],['CNY','Chinese Yuan'],
+  ['COP','Colombian Peso'],['CZK','Czech Koruna'],['DKK','Danish Krone'],['EGP','Egyptian Pound'],['EUR','Euro'],
+  ['GBP','British Pound'],['HKD','Hong Kong Dollar'],['HUF','Hungarian Forint'],['IDR','Indonesian Rupiah'],['ILS','Israeli New Shekel'],
+  ['INR','Indian Rupee'],['ISK','Icelandic Krona'],['JPY','Japanese Yen'],['KES','Kenyan Shilling'],['KRW','South Korean Won'],
+  ['KHR','Cambodian Riel'],['LKR','Sri Lankan Rupee'],['MXN','Mexican Peso'],['MYR','Malaysian Ringgit'],['NGN','Nigerian Naira'],
+  ['NOK','Norwegian Krone'],['NPR','Nepalese Rupee'],['NZD','New Zealand Dollar'],['PHP','Philippine Peso'],['PKR','Pakistani Rupee'],
+  ['PLN','Polish Zloty'],['RON','Romanian Leu'],['RSD','Serbian Dinar'],['SAR','Saudi Riyal'],['SEK','Swedish Krona'],
+  ['SGD','Singapore Dollar'],['THB','Thai Baht'],['TRY','Turkish Lira'],['UAH','Ukrainian Hryvnia'],['USD','US Dollar'],
+  ['VND','Vietnamese Dong'],['ZAR','South African Rand']
+].map(([code, name])=>({code,name}));
+const money = (value, currency='USD') => {
+  const n = Number(value || 0);
+  try { return new Intl.NumberFormat(undefined, { style:'currency', currency:currency || 'USD', maximumFractionDigits:2 }).format(n); }
+  catch { return `${currency || 'USD'} ${n.toFixed(2)}`; }
+};
+const currencySymbol = (currency='USD') => {
+  try { return new Intl.NumberFormat(undefined, { style:'currency', currency:currency || 'USD' }).formatToParts(0).find(part=>part.type==='currency')?.value || currency; }
+  catch { return currency || 'USD'; }
+};
+function makeSlug(name, sku) {
+  const base = (name || 'product').toLowerCase().trim().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'') || 'product';
+  const suffix = (sku || '').toLowerCase().trim().replace(/[^a-z0-9-]+/g,'-').replace(/^-+|-+$/g,'');
+  return suffix ? `${base}-${suffix}` : `${base}-${Date.now().toString(36)}`;
 }
+
+export default function Admin() {
+  const [loading,setLoading]=useState(true), [authorized,setAuthorized]=useState(false), [activeTab,setActiveTab]=useState('products');
+  const [products,setProducts]=useState([]), [orders,setOrders]=useState([]), [orderItems,setOrderItems]=useState([]), [message,setMessage]=useState('');
+  const [form,setForm]=useState(blank), [photos,setPhotos]=useState([]), [saving,setSaving]=useState(false);
+  const [selectedProduct,setSelectedProduct]=useState(null), [variants,setVariants]=useState([]), [variantForm,setVariantForm]=useState(blankVariant), [variantPhoto,setVariantPhoto]=useState(null), [variantSaving,setVariantSaving]=useState(false), [variantMessage,setVariantMessage]=useState('');
+  const [orderFilter,setOrderFilter]=useState('All'), [updatingOrder,setUpdatingOrder]=useState(''), [orderMessage,setOrderMessage]=useState(''), [savingTracking,setSavingTracking]=useState('');
+  const [shippingRates,setShippingRates]=useState([]), [shippingForm,setShippingForm]=useState({id:'',country_code:'',country_name:'',currency:'USD',shipping_charge:'0',free_shipping_minimum:'',duty_percent:'0',active:true}), [shippingMessage,setShippingMessage]=useState(''), [shippingSaving,setShippingSaving]=useState(false);
+
+  useEffect(()=>{ checkUser(); },[]);
+  async function checkUser(){
+    setLoading(true);
+    const {data:auth,error:authError}=await supabase.auth.getSession();
+    if(authError || !auth?.session){setAuthorized(false);setLoading(false);return;}
+    const {data:profile,error}=await supabase.from('profiles').select('role').eq('id',auth.session.user.id).maybeSingle();
+    if(error || profile?.role!=='admin'){setAuthorized(false);setMessage(error?.message || 'This account does not have admin access.');setLoading(false);return;}
+    setAuthorized(true); await Promise.all([loadProducts(),loadOrders(),loadShippingRates()]); setLoading(false);
+  }
+  async function login(e){
+    e.preventDefault(); setMessage('');
+    const email=e.currentTarget.email.value.trim(), password=e.currentTarget.password.value;
+    const {error}=await supabase.auth.signInWithPassword({email,password});
+    if(error){setMessage(error.message);return;} await checkUser();
+  }
+  async function logout(){
+    await supabase.auth.signOut(); setAuthorized(false);setProducts([]);setOrders([]);setOrderItems([]);setForm({...blank});closeVariants();setMessage('Logged out.');
+  }
+  async function loadProducts(){
+    const {data,error}=await supabase.from('products').select('*').order('created_at',{ascending:false});
+    if(error){setMessage('Could not load products: '+error.message);return;} setProducts((data||[]).map(p=>({...p,category:collectionForProduct(p)})));
+  }
+  async function uploadImages(files, prefix='product'){
+    const urls=[];
+    for(const file of files){
+      const safe=file.name.replace(/[^a-zA-Z0-9.-]/g,'-'), fileName=`${prefix}-${Date.now()}-${Math.random().toString(36).slice(2,8)}-${safe}`;
+      const {error}=await supabase.storage.from('product-images').upload(fileName,file,{contentType:file.type,upsert:false});
+      if(error)throw new Error('Image upload failed: '+error.message);
+      const {data}=supabase.storage.from('product-images').getPublicUrl(fileName);
+      if(data?.publicUrl)urls.push(data.publicUrl);
+    }
+    return urls;
+  }
+  function editProduct(p){
+    const imgs=Array.isArray(p.images)?p.images.filter(Boolean):[];
+    const all=imgs.length?imgs:(p.image?[p.image]:[]);
+    setForm({id:p.id,originalName:p.name||'',name:p.name||'',sku:p.sku||'',slug:p.slug||'',category:collectionForProduct(p),subcategory:p.subcategory||'',description:p.description||'',price:p.price??'',stock:p.stock??0,material:p.material||'',origin:p.origin||'India',image:p.image||all[0]||'',images:all,active:p.active??true,rating:p.rating??'',reviews:p.reviews??0});
+    setPhotos([]);window.scrollTo(0,0);setActiveTab('products');
+  }
+  async function saveProduct(e){
+    e.preventDefault();
+    if(!form.name.trim()){setMessage('Please enter product name.');return;}
+    if(form.price==='' || Number(form.price)<0 || !Number.isFinite(Number(form.price))){setMessage('Please enter a valid product price.');return;}
+    setSaving(true);setMessage('Saving product...');
+    try{
+      const uploaded=photos.length?await uploadImages(photos):[];
+      const existing=(form.images||[]).filter(Boolean);
+      const allImages=[...existing,...uploaded];
+      const primaryImage=allImages[0]||form.image||'';
+      const slug=form.slug && form.name.trim()===form.originalName?form.slug:makeSlug(form.name,form.sku);
+      const record={name:form.name.trim(),sku:form.sku.trim()||null,slug,category:form.category,subcategory:form.subcategory.trim()||null,description:form.description.trim()||null,price:Number(form.price),base_currency:'USD',stock:Math.max(0,Number(form.stock)||0),material:form.material.trim()||null,origin:form.origin.trim()||'India',image:primaryImage||null,images:allImages,active:Boolean(form.active),rating:form.rating===''?null:Number(form.rating),reviews:Math.max(0,Number(form.reviews)||0)};
+      const result=form.id?await supabase.from('products').update(record).eq('id',form.id):await supabase.from('products').insert(record);
+      if(result.error)throw result.error;
+      setMessage('Product saved successfully.');setForm({...blank});setPhotos([]);await loadProducts();
+    }catch(err){setMessage('Save failed: '+(err.message||'Unknown error'));}finally{setSaving(false);}
+  }
+  async function deleteProduct(id){
+    if(!window.confirm('Are you sure you want to delete this product?'))return;
+    const {error}=await supabase.from('products').delete().eq('id',id);
+    if(error){setMessage('Delete failed: '+error.message);return;}
+    if(selectedProduct?.id===id)closeVariants();setMessage('Product deleted.');await loadProducts();
+  }
+  function closeVariants(){setSelectedProduct(null);setVariants([]);setVariantForm({...blankVariant});setVariantPhoto(null);setVariantMessage('');}
+  async function openVariants(product){
+    if(!needsVariants(product)){setVariantMessage('Variants are only available for clothing categories.');return;}
+    setSelectedProduct(product);setVariantForm({...blankVariant});setVariantPhoto(null);setVariantMessage('Loading variants...');
+    const {data,error}=await supabase.from('product_variants').select('*').eq('product_id',product.id).order('created_at',{ascending:false});
+    if(error){setVariants([]);setVariantMessage('Could not load variants: '+error.message);return;}
+    setVariants(data||[]);setVariantMessage('');
+  }
+  async function saveVariant(e){
+    e.preventDefault();if(!selectedProduct)return;
+    if(!variantForm.size.trim()||!variantForm.color.trim()){setVariantMessage('Please enter both Size and Colour.');return;}
+    setVariantSaving(true);setVariantMessage('Saving variant...');
+    try{
+      let imageUrl=variantForm.image_url.trim();
+      if(variantPhoto){const uploaded=await uploadImages([variantPhoto],'variant');imageUrl=uploaded[0]||imageUrl;}
+      const record={product_id:selectedProduct.id,size:variantForm.size.trim(),color:variantForm.color.trim(),sku:variantForm.sku.trim()||null,stock:Math.max(0,Number(variantForm.stock)||0),image_url:imageUrl||null,active:true};
+      const {error}=await supabase.from('product_variants').insert(record);if(error)throw error;
+      setVariantForm({...blankVariant});setVariantPhoto(null);setVariantMessage('Variant saved successfully.');await openVariants(selectedProduct);
+    }catch(err){setVariantMessage('Save failed: '+(err.message||'Unknown error'));}finally{setVariantSaving(false);}
+  }
+  async function deleteVariant(id){
+    if(!window.confirm('Delete this Size and Colour variant?'))return;
+    const {error}=await supabase.from('product_variants').delete().eq('id',id);
+    if(error){setVariantMessage('Delete failed: '+error.message);return;}setVariantMessage('Variant deleted.');await openVariants(selectedProduct);
+  }
+  async function loadOrders(){
+    setOrderMessage('');
+    const {data,error}=await supabase.from('orders').select('*').order('created_at',{ascending:false});
+    if(error){setOrderMessage('Could not load orders: '+error.message);return;}
+    const rows=data||[];setOrders(rows);
+    if(rows.length){
+      const ids=rows.map(o=>o.id);
+      const {data:items,error:itemError}=await supabase.from('order_items').select('*').in('order_id',ids);
+      if(itemError){setOrderItems([]);setOrderMessage('Orders loaded, but order items could not be loaded: '+itemError.message);}
+      else setOrderItems(items||[]);
+    } else setOrderItems([]);
+  }
+  async function loadShippingRates(){
+    setShippingMessage('');
+    const {data,error}=await supabase.from('shipping_settings').select('*').order('country_name',{ascending:true});
+    if(error){setShippingMessage('Could not load shipping settings: '+error.message);return;}
+    setShippingRates(data||[]);
+  }
+  function selectShippingCountry(countryCode){
+    const selected=COUNTRY_OPTIONS.find(c=>c.code===countryCode);
+    if(!selected)return;
+    setShippingForm(prev=>({...prev,country_code:selected.code,country_name:selected.name,currency:selected.currency}));
+  }
+  function editShippingRate(rate){
+    setShippingForm({id:rate.id,country_code:rate.country_code||'',country_name:rate.country_name||'',currency:rate.currency||'USD',shipping_charge:String(rate.shipping_charge??0),free_shipping_minimum:rate.free_shipping_minimum==null?'':String(rate.free_shipping_minimum),duty_percent:String(rate.duty_percent??0),active:rate.active??true});
+    window.scrollTo(0,0);
+  }
+  async function saveShippingRate(e){
+    e.preventDefault();
+    if(!shippingForm.country_code.trim()||!shippingForm.country_name.trim()){setShippingMessage('Country code and country name are required.');return;}
+    const charge=Number(shippingForm.shipping_charge), duty=Number(shippingForm.duty_percent);
+    const minimum=shippingForm.free_shipping_minimum===''?null:Number(shippingForm.free_shipping_minimum);
+    if(!Number.isFinite(charge)||charge<0||!Number.isFinite(duty)||duty<0||duty>100||(minimum!==null&&(!Number.isFinite(minimum)||minimum<0))){setShippingMessage('Please enter valid non-negative amounts and duty between 0 and 100.');return;}
+    setShippingSaving(true);setShippingMessage('Saving shipping rate...');
+    const record={country_code:shippingForm.country_code.trim().toUpperCase(),country_name:shippingForm.country_name.trim(),currency:shippingForm.currency.trim().toUpperCase()||'USD',shipping_charge:charge,free_shipping_minimum:minimum,duty_percent:duty,active:Boolean(shippingForm.active),updated_at:new Date().toISOString()};
+    const result=shippingForm.id?await supabase.from('shipping_settings').update(record).eq('id',shippingForm.id):await supabase.from('shipping_settings').insert(record);
+    if(result.error){setShippingMessage('Save failed: '+result.error.message);}
+    else{setShippingMessage('Shipping rate saved.');setShippingForm({id:'',country_code:'',country_name:'',currency:'USD',shipping_charge:'0',free_shipping_minimum:'',duty_percent:'0',active:true});await loadShippingRates();}
+    setShippingSaving(false);
+  }
+  async function deleteShippingRate(id){
+    if(!window.confirm('Delete this country shipping rate?'))return;
+    const {error}=await supabase.from('shipping_settings').delete().eq('id',id);
+    if(error){setShippingMessage('Delete failed: '+error.message);return;}
+    setShippingMessage('Shipping rate deleted.');await loadShippingRates();
+  }
+  async function updateOrderStatus(orderId,status){
+    setUpdatingOrder(orderId);setOrderMessage('Updating order...');
+    try {
+      const {error}=await supabase.from('orders').update({status}).eq('id',orderId);
+      if(error){setOrderMessage('Status update failed: '+error.message);return;}
+      setOrders(prev=>prev.map(o=>o.id===orderId?{...o,status}:o));
+      setOrderMessage('Order status saved. Sending customer notification...');
+      const {data:notifyData,error:notifyError}=await supabase.functions.invoke('order-status-notification',{body:{order_id:orderId,status}});
+      if(notifyError){
+        setOrderMessage('Order status saved, but notification failed: '+notifyError.message);
+      } else if(notifyData?.warning || notifyData?.error){
+        setOrderMessage('Order status saved, but notification was not sent: '+(notifyData.warning||notifyData.error));
+      } else {
+        setOrderMessage('Order status saved. Notification function responded successfully. Please verify the email inbox.');
+      }
+    } catch(err) {
+      setOrderMessage('Order status saved/updated may need checking. Notification request error: '+(err?.message||'Unknown error'));
+    } finally {
+      setUpdatingOrder('');
+    }
+  }
+  async function updatePaymentStatus(orderId,paymentStatus){
+    setUpdatingOrder(orderId);setOrderMessage('Updating payment status...');
+    try{
+      const payload={payment_status:paymentStatus,...(paymentStatus==='Paid'?{paid_at:new Date().toISOString()}:{paid_at:null})};
+      const {error}=await supabase.from('orders').update(payload).eq('id',orderId);
+      if(error)throw error;
+      setOrders(prev=>prev.map(o=>o.id===orderId?{...o,...payload}:o));
+      setOrderMessage(paymentStatus==='Paid'?'Payment marked as verified. Please ensure the funds are visible in the receiving wallet/bank account.':'Payment status updated.');
+    }catch(err){setOrderMessage('Payment status update failed: '+(err?.message||'Unknown error'));}
+    finally{setUpdatingOrder('');}
+  }
+  function changeOrderField(orderId,field,value){
+    setOrders(prev=>prev.map(o=>o.id===orderId?{...o,[field]:value}:o));
+  }
+  async function saveTracking(order){
+    setSavingTracking(order.id);setOrderMessage('Saving tracking details...');
+    const payload={
+      courier_name:(order.courier_name||'').trim()||null,
+      tracking_number:(order.tracking_number||'').trim()||null,
+      tracking_url:(order.tracking_url||'').trim()||null,
+      shipped_at:order.shipped_at||null
+    };
+    const {error}=await supabase.from('orders').update(payload).eq('id',order.id);
+    if(error)setOrderMessage('Tracking details save failed: '+error.message);
+    else setOrderMessage('Tracking details saved successfully.');
+    setSavingTracking('');
+  }
+  const filteredOrders=useMemo(()=>orderFilter==='All'?orders:orders.filter(o=>(o.status||'Pending').toLowerCase()===orderFilter.toLowerCase()),[orders,orderFilter]);
+  const customers=useMemo(()=>{
+    const map=new Map();
+    orders.forEach(o=>{const key=o.user_id||o.customer_email||o.id;const old=map.get(key)||{email:o.customer_email||'No email',orders:0,total:0,country:o.country||'—',lastOrder:o.created_at};old.orders++;old.total+=Number(o.total||0);if(!old.lastOrder||new Date(o.created_at)>new Date(old.lastOrder))old.lastOrder=o.created_at;map.set(key,old);});
+    return [...map.values()];
+  },[orders]);
+  const stats=useMemo(()=>({orders:orders.length,pending:orders.filter(o=>(o.status||'Pending').toLowerCase()==='pending').length,sales:orders.reduce((a,o)=>a+Number(o.total||0),0),customers:customers.length,products:products.length}),[orders,customers,products]);
+  const itemsFor=(id)=>orderItems.filter(i=>i.order_id===id);
+  const addressText=(a)=>{if(!a)return 'No shipping address saved';if(typeof a==='string')return a;return [a.full_name,a.name,a.phone,a.address_line1,a.address_line2,a.address,a.city,a.state,a.postal_code,a.zip,a.country].filter(Boolean).join(', ')||JSON.stringify(a);};
+
+  if(loading)return <main style={s.page}>Loading Admin Panel...</main>;
+  if(!authorized)return <main style={s.page}><section style={s.card}><h1>GMX FASHION INDIA</h1><h2>Admin Login</h2><form onSubmit={login}><input name="email" type="email" placeholder="Admin email" required style={s.input}/><input name="password" type="password" placeholder="Password" required style={s.input}/><button style={s.button}>LOGIN</button></form>{message&&<p>{message}</p>}</section></main>;
+
+  return <main style={s.page}>
+    <header style={s.header}><h1 className="gmx-admin-title" style={{fontSize:"clamp(28px,4vw,42px)",fontWeight:800}}>GMX FASHION INDIA <span style={{color:"#64748b",fontWeight:500}}> / ADMIN</span></h1><button type="button" onClick={logout} style={s.secondary}>LOGOUT</button></header>
+    <nav className="gmx-admin-nav" style={s.nav}>{[['dashboard','DASHBOARD'],['orders','ORDERS'],['shipping','SHIPPING'],['customers','CUSTOMERS'],['products','PRODUCTS']].map(([id,label])=><button key={id} type="button" onClick={()=>setActiveTab(id)} style={activeTab===id?s.activeTab:s.tab}>{label}</button>)}</nav>
+    {message&&<p style={s.notice}>{message}</p>}
+    {activeTab==='dashboard'&&<section style={s.card}><h2>Dashboard Overview</h2><div style={s.stats}>{[['Total Orders',stats.orders],['Pending Orders',stats.pending],['Customers',stats.customers],['Products',stats.products],['Order Value',money(stats.sales,'USD')]].map(([label,value])=><div key={label} style={s.stat}><small>{label}</small><h2>{value}</h2></div>)}</div><button style={s.secondary} onClick={()=>{loadOrders();loadProducts();}}>REFRESH DASHBOARD</button></section>}
+    {activeTab==='orders'&&<section style={s.card}><div style={s.sectionHead}><h2>Customer Orders ({orders.length})</h2><button type="button" style={s.secondary} onClick={loadOrders}>REFRESH</button></div>{orderMessage&&<p style={s.notice}>{orderMessage}</p>}<label>Filter Orders</label><select style={s.input} value={orderFilter} onChange={e=>setOrderFilter(e.target.value)}>{['All',...ORDER_STATUSES].map(v=><option key={v}>{v}</option>)}</select>
+      {filteredOrders.length===0&&<p>No orders found for this filter.</p>}
+      {filteredOrders.map(o=><article key={o.id} style={s.order}><div style={s.sectionHead}><div><b>Order: {o.order_number||o.id}</b><p>{o.customer_email||'No customer email'} · {o.country||'Country not set'} · {new Date(o.created_at).toLocaleString()}</p></div><strong>{money(o.total,o.currency||'USD')}</strong></div><p><b>Delivery:</b> {addressText(o.shipping_address)}</p>
+        <div style={{margin:'12px 0',padding:'14px',border:'1px solid #dbe3ef',borderRadius:'10px',background:'#f8fafc'}}>
+          <h4 style={{margin:'0 0 10px'}}>Payment Verification</h4>
+          <p style={{margin:'5px 0'}}><b>Method:</b> {({usdt:'USDT · Polygon',mexico:'Mexico Bank Transfer',usa:'USA Bank Transfer'})[o.payment_method]||o.payment_method||'Not recorded (older order)'}</p>
+          <p style={{margin:'5px 0'}}><b>Payment status:</b> {o.payment_status||'Pending'}</p>
+          <p style={{margin:'5px 0',overflowWrap:'anywhere'}}><b>Transaction / bank reference:</b> {o.payment_reference||'Not submitted'}</p>
+          {o.paid_at&&<p style={{margin:'5px 0'}}><b>Verified at:</b> {new Date(o.paid_at).toLocaleString()}</p>}
+          <div style={{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'center',marginTop:'10px'}}>
+            <button type='button' style={s.button} disabled={updatingOrder===o.id||o.payment_status==='Paid'} onClick={()=>{if(window.confirm('Confirm that the funds are visible in the receiving wallet or bank account, then mark this payment as Paid?'))updatePaymentStatus(o.id,'Paid');}}>MARK PAYMENT VERIFIED</button>
+            <button type='button' style={s.secondary} disabled={updatingOrder===o.id||o.payment_status!=='Paid'} onClick={()=>updatePaymentStatus(o.id,'Pending')}>RESET TO PENDING</button>
+          </div>
+          <small style={{display:'block',marginTop:'8px',color:'#475569'}}>Only mark Paid after checking the actual wallet/bank receipt. A customer-submitted TXID or screenshot alone is not proof of received funds.</small>
+        </div>
+        <div style={s.stats}><div><small>Subtotal</small><b>{money(o.subtotal,o.currency)}</b></div><div><small>Shipping</small><b>{money(o.shipping,o.currency)}</b></div><div><small>Tax / Duty</small><b>{money(o.tax,o.currency)}</b></div></div><h4>Products</h4>{itemsFor(o.id).length?itemsFor(o.id).map((it,idx)=><div key={it.id||idx} style={s.orderItem}><span>{it.product_name||it.product_id||'Product'}{it.variant_size||it.variant_color?` — ${[it.variant_size,it.variant_color].filter(Boolean).join(' / ')}`:''} · Qty {it.quantity}</span><b>{money(Number(it.unit_price||0)*Number(it.quantity||0),o.currency)}</b></div>):<p>No order items found.</p>}<div style={s.statusRow}><label>Order Status</label><select style={{...s.input,maxWidth:'240px',margin:0}} value={o.status||'Pending'} disabled={updatingOrder===o.id} onChange={e=>updateOrderStatus(o.id,e.target.value)}>{ORDER_STATUSES.map(v=><option key={v}>{v}</option>)}</select><button type="button" style={s.button} disabled={updatingOrder===o.id || o.status==='Confirmed'} onClick={()=>updateOrderStatus(o.id,'Confirmed')}>CONFIRM ORDER</button><button type="button" style={s.delete} disabled={updatingOrder===o.id || o.status==='Cancelled'} onClick={()=>{if(window.confirm('Cancel this customer order?'))updateOrderStatus(o.id,'Cancelled');}}>CANCEL ORDER</button>{updatingOrder===o.id&&<small>Updating…</small>}</div>
+        <div style={s.trackingBox}>
+          <h4 style={{margin:'4px 0 12px',color:'#172554'}}>Shipment & Tracking Details</h4>
+          <div style={s.trackingGrid}>
+            <div><label>Courier Name</label><input style={s.input} placeholder="DHL, FedEx, UPS..." value={o.courier_name||''} onChange={e=>changeOrderField(o.id,'courier_name',e.target.value)}/></div>
+            <div><label>Tracking Number</label><input style={s.input} placeholder="Enter tracking number" value={o.tracking_number||''} onChange={e=>changeOrderField(o.id,'tracking_number',e.target.value)}/></div>
+            <div style={{gridColumn:'1 / -1'}}><label>Tracking URL</label><input style={s.input} type="url" placeholder="https://courier-tracking-page..." value={o.tracking_url||''} onChange={e=>changeOrderField(o.id,'tracking_url',e.target.value)}/></div>
+            <div><label>Dispatch Date</label><input style={s.input} type="datetime-local" value={o.shipped_at?new Date(o.shipped_at).toISOString().slice(0,16):''} onChange={e=>changeOrderField(o.id,'shipped_at',e.target.value?new Date(e.target.value).toISOString():null)}/></div>
+          </div>
+          <button type="button" style={s.button} disabled={savingTracking===o.id} onClick={()=>saveTracking(o)}>{savingTracking===o.id?'SAVING...':'SAVE TRACKING DETAILS'}</button>
+          {o.tracking_number&&o.tracking_url&&<a href={o.tracking_url} target="_blank" rel="noreferrer" style={{marginLeft:12,color:'#0049B7',fontWeight:700}}>OPEN TRACKING PAGE ↗</a>}
+        </div>
+      </article>)}
+    </section>}
+    {activeTab==='shipping'&&<>
+      <section style={s.card}><h2>{shippingForm.id?'Edit Shipping Rate':'Add Country Shipping Rate'}</h2>
+        <form onSubmit={saveShippingRate}>
+          <label>Select Country *</label>
+          <select style={s.input} value={shippingForm.country_code} onChange={e=>selectShippingCountry(e.target.value)} required>
+            <option value="">Choose a country...</option>
+            {COUNTRY_OPTIONS.map(country=><option key={country.code} value={country.code}>{country.name} ({country.code})</option>)}
+          </select>
+          <label>Country Code *</label>
+          <input style={s.input} value={shippingForm.country_code} readOnly required placeholder="Auto-filled from country" />
+          <label>Country Name *</label>
+          <input style={s.input} value={shippingForm.country_name} readOnly required placeholder="Auto-filled from country" />
+          <label>Currency Code *</label>
+          <select style={s.input} value={shippingForm.currency} onChange={e=>setShippingForm({...shippingForm,currency:e.target.value})} required>
+            {CURRENCY_OPTIONS.map(currency=><option key={currency.code} value={currency.code}>{currency.code} — {currency.name}</option>)}
+          </select>
+          <label>Shipping Charge ({shippingForm.currency})</label><div style={s.currencyInputWrap}><span style={s.currencyPrefix}>{currencySymbol(shippingForm.currency)}</span><input style={{...s.input,margin:0,paddingLeft:48}} type="number" min="0" step="0.01" value={shippingForm.shipping_charge} onChange={e=>setShippingForm({...shippingForm,shipping_charge:e.target.value})} required /></div>
+          <label>Free Shipping Minimum ({shippingForm.currency}; leave blank to disable)</label><div style={s.currencyInputWrap}><span style={s.currencyPrefix}>{currencySymbol(shippingForm.currency)}</span><input style={{...s.input,margin:0,paddingLeft:48}} type="number" min="0" step="0.01" value={shippingForm.free_shipping_minimum} onChange={e=>setShippingForm({...shippingForm,free_shipping_minimum:e.target.value})} /></div>
+          <label>Import Duty Percentage (%)</label><input style={s.input} type="number" min="0" max="100" step="0.01" value={shippingForm.duty_percent} onChange={e=>setShippingForm({...shippingForm,duty_percent:e.target.value})} />
+          <label><input type="checkbox" checked={shippingForm.active} onChange={e=>setShippingForm({...shippingForm,active:e.target.checked})}/> Active for customers</label>
+          <p><button type="submit" disabled={shippingSaving} style={s.button}>{shippingSaving?'SAVING...':shippingForm.id?'UPDATE SHIPPING RATE':'SAVE SHIPPING RATE'}</button><button type="button" style={s.secondary} onClick={()=>setShippingForm({id:'',country_code:'',country_name:'',currency:'USD',shipping_charge:'0',free_shipping_minimum:'',duty_percent:'0',active:true})}>CLEAR FORM</button></p>
+        </form>
+        {shippingMessage&&<p style={s.notice}>{shippingMessage}</p>}
+      </section>
+      <section style={s.card}><div style={s.sectionHead}><h2>Country Shipping Rates ({shippingRates.length})</h2><button type="button" style={s.secondary} onClick={loadShippingRates}>REFRESH</button></div>
+        {shippingRates.length===0?<p>No country rates added yet. Add rates only after the client confirms actual charges.</p>:shippingRates.map(rate=><article key={rate.id} style={s.product}><div style={{flex:1}}><b>{rate.country_name} ({rate.country_code})</b><p>{rate.currency} {rate.shipping_charge} · Free shipping from: {rate.free_shipping_minimum??'Disabled'} · Duty: {rate.duty_percent}%</p><small>{rate.active?'Active':'Inactive'}</small></div><button type="button" style={s.secondary} onClick={()=>editShippingRate(rate)}>EDIT</button><button type="button" style={s.delete} onClick={()=>deleteShippingRate(rate.id)}>DELETE</button></article>)}
+      </section>
+    </>}
+    {activeTab==='customers'&&<section style={s.card}><div style={s.sectionHead}><h2>Customers ({customers.length})</h2><button style={s.secondary} onClick={loadOrders}>REFRESH</button></div>{customers.length===0?<p>No customers with orders yet.</p>:customers.map((c,i)=><article key={`${c.email}-${i}`} style={s.product}><div style={{flex:1}}><b>{c.email}</b><p>{c.country} · {c.orders} order(s) · Last order: {c.lastOrder?new Date(c.lastOrder).toLocaleDateString():'—'}</p></div><b>{money(c.total,'USD')}</b></article>)}</section>}
+    {activeTab==='products'&&<>
+      <section style={s.card}><h2>{form.id?'Edit Product':'Add New Product'}</h2><form onSubmit={saveProduct}>
+        <label>Product name *</label><input style={s.input} value={form.name} onChange={e=>setForm({...form,name:e.target.value})} required/>
+        <label>SKU</label><input style={s.input} value={form.sku} onChange={e=>setForm({...form,sku:e.target.value})}/>
+        <label>Category</label><select style={s.input} value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select>
+        <label>Subcategory</label><input style={s.input} value={form.subcategory} onChange={e=>setForm({...form,subcategory:e.target.value})}/>
+        <label>Description</label><textarea style={s.input} rows="4" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/>
+        <label>Price (USD) *</label><input style={s.input} type="number" min="0" step="0.01" value={form.price} onChange={e=>setForm({...form,price:e.target.value})} required/>
+        <label>Stock</label><input style={s.input} type="number" min="0" value={form.stock} onChange={e=>setForm({...form,stock:e.target.value})}/>
+        <label>Material</label><input style={s.input} value={form.material} onChange={e=>setForm({...form,material:e.target.value})}/>
+        <label>Origin</label><input style={s.input} value={form.origin} onChange={e=>setForm({...form,origin:e.target.value})}/>
+        <label>Rating</label><input style={s.input} type="number" min="0" max="5" step="0.1" value={form.rating} onChange={e=>setForm({...form,rating:e.target.value})}/>
+        <label>Reviews count</label><input style={s.input} type="number" min="0" value={form.reviews} onChange={e=>setForm({...form,reviews:e.target.value})}/>
+        <label>Product images (select multiple)</label><input style={s.input} type="file" accept="image/*" multiple onChange={e=>setPhotos(Array.from(e.target.files||[]))}/>
+        {photos.length>0&&<p>{photos.length} new image(s) selected: {photos.map(f=>f.name).join(', ')}</p>}
+        {form.images?.length>0&&<div style={s.imageGrid}>{form.images.map((url,i)=><div key={`${url}-${i}`} style={s.imageTile}><img src={url} alt={`Product ${i+1}`} style={s.galleryImage}/><small>{i===0?'★ Main image':`Image ${i+1}`}</small>{i!==0&&<button type="button" style={s.secondary} onClick={()=>setForm(prev=>{const next=[...prev.images];const [chosen]=next.splice(i,1);next.unshift(chosen);return {...prev,images:next,image:next[0]||''};})}>SET AS MAIN</button>}<button type="button" style={s.deleteSmall} onClick={()=>setForm(prev=>{const next=prev.images.filter((_,j)=>j!==i);return {...prev,images:next,image:next[0]||''};})}>REMOVE</button></div>)}</div>}
+        <label><input type="checkbox" checked={form.active} onChange={e=>setForm({...form,active:e.target.checked})}/> Show product on website</label>
+        <p><button disabled={saving} style={s.button}>{saving?'SAVING...':'SAVE PRODUCT'}</button><button type="button" style={s.secondary} onClick={()=>{setForm({...blank});setPhotos([]);setMessage('Form cleared.');}}>CLEAR FORM</button></p>
+      </form></section>
+      {selectedProduct&&<section style={s.card}><h2>Size & Colour — {selectedProduct.name}</h2><button type="button" style={s.secondary} onClick={closeVariants}>CLOSE</button><form onSubmit={saveVariant}><label>Size (S, M, L, XL, XXL)</label><input style={s.input} value={variantForm.size} onChange={e=>setVariantForm({...variantForm,size:e.target.value})} required/><label>Colour</label><input style={s.input} placeholder="Black, White, Blue..." value={variantForm.color} onChange={e=>setVariantForm({...variantForm,color:e.target.value})} required/><label>Variant SKU</label><input style={s.input} value={variantForm.sku} onChange={e=>setVariantForm({...variantForm,sku:e.target.value})}/><label>Variant Stock</label><input style={s.input} type="number" min="0" value={variantForm.stock} onChange={e=>setVariantForm({...variantForm,stock:e.target.value})}/><label>Variant image (optional)</label><input style={s.input} type="file" accept="image/*" onChange={e=>setVariantPhoto(e.target.files?.[0]||null)}/><input style={s.input} type="url" placeholder="Or paste an image URL" value={variantForm.image_url} onChange={e=>setVariantForm({...variantForm,image_url:e.target.value})}/><button disabled={variantSaving} style={s.button} type="submit">{variantSaving?'SAVING...':'SAVE VARIANT'}</button></form>{variantMessage&&<p>{variantMessage}</p>}<h3>Saved Variants ({variants.length})</h3>{variants.length===0&&<p>No variants added yet.</p>}{variants.map(v=><article key={v.id} style={s.product}>{v.image_url&&<img src={v.image_url} alt={`${v.color} ${v.size}`} style={s.image}/>}<div style={{flex:1}}><b>Size: {v.size} | Colour: {v.color}</b><p>SKU: {v.sku||'Not set'} · Stock: {v.stock}</p><small>{v.active?'Active':'Hidden'}</small></div><button type="button" style={s.delete} onClick={()=>deleteVariant(v.id)}>DELETE</button></article>)}</section>}
+      <section style={s.card}><h2>Manage Products ({products.length})</h2><button type="button" style={s.secondary} onClick={loadProducts}>REFRESH</button>{products.map(p=><article key={p.id} style={s.product}>{(p.image||p.images?.[0])&&<img src={p.image||p.images[0]} alt={p.name} style={s.image}/>}<div style={{flex:1}}><b>{p.name}</b><p>{p.category} · ${p.price}</p><small>{p.active?'Active':'Hidden'} · {(Array.isArray(p.images)?p.images.length:(p.image?1:0))} image(s)</small></div>{needsVariants(p)&&<button type="button" style={s.secondary} onClick={()=>openVariants(p)}>SIZE & COLOUR</button>}<button type="button" style={s.secondary} onClick={()=>editProduct(p)}>EDIT</button><button type="button" style={s.delete} onClick={()=>deleteProduct(p.id)}>DELETE</button></article>)}</section>
+    </>}
+  </main>;
+}
+
+const s={
+  page:{maxWidth:'1240px',margin:'24px auto',padding:'clamp(14px,3vw,30px)',fontFamily:'Inter, Arial, sans-serif',color:'#1e293b'},
+  header:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'12px',padding:'22px 24px',background:'linear-gradient(135deg,#fff 0%,#eef4ff 100%)',border:'1px solid #dbe5f3',borderRadius:'20px',boxShadow:'0 8px 26px rgba(15,23,42,.06)'},
+  nav:{display:'flex',gap:'10px',flexWrap:'wrap',margin:'18px 0',padding:'10px',background:'#e9eef7',borderRadius:'16px'},
+  tab:{background:'transparent',color:'#334155',padding:'12px 18px',border:0,borderRadius:'12px',cursor:'pointer',fontWeight:700},
+  activeTab:{background:'#123b75',color:'#fff',padding:'12px 18px',border:0,borderRadius:'12px',cursor:'pointer',fontWeight:700,boxShadow:'0 5px 14px rgba(18,59,117,.22)'},
+  card:{background:'#fff',padding:'clamp(17px,2.5vw,28px)',margin:'20px 0',border:'1px solid #e2e8f0',borderRadius:'18px',boxShadow:'0 8px 24px rgba(15,23,42,.045)'},
+  input:{display:'block',width:'100%',boxSizing:'border-box',padding:'13px 14px',margin:'7px 0 15px',border:'1px solid #cbd5e1',borderRadius:'10px',background:'#fbfdff',color:'#0f172a',outlineColor:'#2563eb'},
+  button:{background:'#174a8b',color:'#fff',padding:'12px 20px',border:0,borderRadius:'11px',cursor:'pointer',margin:'5px',fontWeight:700},
+  secondary:{background:'#edf2f8',color:'#1e3a5f',padding:'10px 15px',border:0,borderRadius:'10px',cursor:'pointer',margin:'5px',fontWeight:700},
+  delete:{background:'#b42318',color:'#fff',padding:'10px 15px',border:0,borderRadius:'20px',cursor:'pointer',margin:'5px'},
+  deleteSmall:{background:'#b42318',color:'#fff',padding:'6px 9px',border:0,borderRadius:'14px',cursor:'pointer',fontSize:'11px',marginTop:'5px'},
+  product:{display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap',borderBottom:'1px solid #e8edf4',padding:'16px 0'},
+  image:{width:'65px',height:'65px',objectFit:'cover',borderRadius:'6px'},
+  galleryImage:{width:'100%',height:'90px',objectFit:'cover',borderRadius:'6px'},
+  imageGrid:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:'10px',margin:'10px 0 18px'},
+  imageTile:{border:'1px solid #ddd',borderRadius:'8px',padding:'7px',display:'flex',flexDirection:'column',gap:'4px'},
+  sectionHead:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px',flexWrap:'wrap'},
+  stats:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:'12px',margin:'14px 0'},
+  stat:{background:'#f7f7f7',padding:'14px',borderRadius:'8px'},
+  order:{border:'1px solid #dbe4f0',borderRadius:'16px',padding:'clamp(14px,2vw,22px)',margin:'16px 0',background:'linear-gradient(180deg,#fff,#fbfdff)'},
+  orderItem:{display:'flex',justifyContent:'space-between',gap:'12px',padding:'8px 0',borderBottom:'1px solid #eee',flexWrap:'wrap'},
+  statusRow:{display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap',marginTop:'12px'},
+  notice: {
+  background: '#eff6ff',
+  color: '#1e40af',
+  padding: '12px 15px',
+  borderRadius: '10px',
+  border: '1px solid #bfdbfe'
+},
+trackingBox: {
+  marginTop: '18px',
+  padding: '16px',
+  border: '1px solid #dbeafe',
+  borderRadius: '14px',
+  background: '#f8fbff'
+},
+trackingGrid: {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  gap: '8px 14px'
+}
+};
