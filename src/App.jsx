@@ -43,7 +43,7 @@ export default function App(){
  [addressForm,setAddressForm]=useState({label:'Home',recipient_name:'',phone:'',address_line1:'',address_line2:'',city:'',state:'',postal_code:'',country:'India',is_default:false}),
  [editingAddressId,setEditingAddressId]=useState(null),[addressFormOpen,setAddressFormOpen]=useState(false),[addressBusy,setAddressBusy]=useState(false),
  [orderHistory,setOrderHistory]=useState([]),[orderItemsById,setOrderItemsById]=useState({}),[ordersBusy,setOrdersBusy]=useState(false),
- [selectedAddressId,setSelectedAddressId]=useState(''),[orderBusy,setOrderBusy]=useState(false),[lastPlacedOrder,setLastPlacedOrder]=useState(null),[shippingSetting,setShippingSetting]=useState(null),[shippingLoading,setShippingLoading]=useState(false),[shippingLoadError,setShippingLoadError]=useState(''),[trackOrderQuery,setTrackOrderQuery]=useState(''),[trackOrderResult,setTrackOrderResult]=useState(null),[trackOrderMessage,setTrackOrderMessage]=useState(''),[policyPage,setPolicyPage]=useState(''),[selectedPaymentMethod,setSelectedPaymentMethod]=useState('usdt');
+ [selectedAddressId,setSelectedAddressId]=useState(''),[orderBusy,setOrderBusy]=useState(false),[lastPlacedOrder,setLastPlacedOrder]=useState(null),[shippingSetting,setShippingSetting]=useState(null),[shippingLoading,setShippingLoading]=useState(false),[shippingLoadError,setShippingLoadError]=useState(''),[trackOrderQuery,setTrackOrderQuery]=useState(''),[trackOrderResult,setTrackOrderResult]=useState(null),[trackOrderMessage,setTrackOrderMessage]=useState(''),[policyPage,setPolicyPage]=useState(''),[selectedPaymentMethod,setSelectedPaymentMethod]=useState('usdt'),[paymentReference,setPaymentReference]=useState('');
  useEffect(()=>{
   let mounted=true;
   supabase.auth.getSession().then(({data})=>{if(mounted)setAuthUser(data?.session?.user||null);});
@@ -146,14 +146,14 @@ export default function App(){
    const countryName=(countries.find(c=>c[1]===country)||[])[0]||address.country;
    const orderNumber='GMX-'+new Date().toISOString().replace(/[-:T.Z]/g,'').slice(0,14)+'-'+Math.random().toString(36).slice(2,6).toUpperCase();
    const shippingAddress={label:address.label||'Delivery',recipient_name:address.recipient_name,phone:address.phone,address_line1:address.address_line1,address_line2:address.address_line2||'',city:address.city,state:address.state,postal_code:address.postal_code,country:address.country};
-   const orderPayload={order_number:orderNumber,status:'Pending',customer_email:authUser.email||'',country:countryName,currency:country,subtotal,shipping,tax,total,shipping_address:shippingAddress,user_id:authUser.id};
+   const orderPayload={order_number:orderNumber,status:'Pending',payment_method:selectedPaymentMethod,payment_status:'Pending',payment_reference:paymentReference.trim()||null,customer_email:authUser.email||'',country:countryName,currency:country,subtotal,shipping,tax,total,shipping_address:shippingAddress,user_id:authUser.id};
    const {data:createdOrder,error:orderError}=await supabase.from('orders').insert(orderPayload).select('id,order_number,status,created_at,total,currency').single();
    if(orderError)throw orderError;
    const orderLines=items.map(p=>({order_id:createdOrder.id,product_id:p.id,product_name:p.name,quantity:Number(p.qty||1),unit_price:Number((Number(p.price)*rate).toFixed(2)),variant_id:p.variantId||null,variant_size:p.variantSize||null,variant_color:p.variantColor||null,variant_sku:p.variantSku||null}));
    const {error:itemsError}=await supabase.from('order_items').insert(orderLines);
    if(itemsError){await supabase.from('orders').delete().eq('id',createdOrder.id).eq('user_id',authUser.id);throw itemsError;}
    const confirmed={...createdOrder,order_number:createdOrder.order_number||orderNumber,status:'Pending',total,currency:country,shipping_address:shippingAddress};
-   setLastPlacedOrder(confirmed);setItems([]);localStorage.gmxCart='';setPage('order-success');showNotice('Your order has been placed successfully!');
+   setLastPlacedOrder({...confirmed,payment_method:selectedPaymentMethod,payment_status:'Pending',payment_reference:paymentReference.trim()||null});setPaymentReference('');setItems([]);localStorage.gmxCart='';setPage('order-success');showNotice('Your order has been placed successfully!');
    const {data:updatedOrders}=await supabase.from('orders').select('*').eq('user_id',authUser.id).order('created_at',{ascending:false});
    if(updatedOrders)setOrderHistory(updatedOrders);
    const {data:updatedLines}=await supabase.from('order_items').select('*').eq('order_id',createdOrder.id);
@@ -296,9 +296,12 @@ export default function App(){
       <b>United States Bank Transfer</b><p>Beneficiary name: <b>Gurpreet Singh</b></p><p>Bank name: <b>Lead Bank</b></p><p>Routing number: <b>101019644</b></p><p>Account number: <b>219541391184</b></p><p>Account type: <b>Checking</b></p><p>Account provider fee shown: 3 USD</p>
       <button type="button" className="outline" onClick={()=>{if(navigator.clipboard?.writeText){navigator.clipboard.writeText('Routing number: 101019644 | Account number: 219541391184').then(()=>showNotice('USA bank details copied.')).catch(()=>showNotice('Please copy the bank details manually.'));}else showNotice('Please copy the bank details manually.');}}>COPY BANK DETAILS</button>
      </div>}
+     <label style={{display:'block',marginTop:'14px'}}>Transaction ID / Bank Transfer Reference (optional)
+      <input value={paymentReference} onChange={e=>setPaymentReference(e.target.value)} placeholder={selectedPaymentMethod==='usdt'?'Paste USDT transaction hash (TXID)':'Enter bank transfer reference'} maxLength={180} style={{width:'100%',marginTop:'7px',padding:'12px',border:'1px solid #ddd',borderRadius:'8px'}} />
+     </label>
     </div>
-    <p className="muted">After making a transfer, please share the transaction reference with our team on WhatsApp. Orders remain Pending until payment is manually verified. Import duty and final shipping charges may be confirmed before dispatch.</p>
-    <button className="solid full" disabled={orderBusy||!items.length||!selectedAddressId||shippingLoading||!shippingSetting} onClick={placeCustomerOrder}>{orderBusy?'PLACING ORDER...':'CONFIRM ORDER · PAYMENT PENDING'}</button>
+    <p className="muted">After placing your order, send the exact amount using the selected USDT wallet or bank details above. You may enter a transaction ID or bank reference if available. GMX will check the receiving account and manually mark the payment as Paid. Send USDT only through the Polygon network. Import duty and final shipping charges may be confirmed before dispatch.</p>
+    <button className="solid full" disabled={orderBusy||!items.length||!selectedAddressId||shippingLoading||!shippingSetting} onClick={placeCustomerOrder}>{orderBusy?'PLACING ORDER...':'CONFIRM ORDER · PAY BY TRANSFER'}</button>
    </div>
   </div>
   <button className="text-link" style={{marginTop:'20px'}} onClick={()=>{setPage('home');setCartOpen(true)}}>← BACK TO SHOPPING BAG</button>
@@ -307,7 +310,7 @@ export default function App(){
   <div style={{fontSize:'48px',color:'#267a4b'}}>✓</div><label>ORDER RECEIVED</label><h2>Your order is <i>confirmed.</i></h2>
   <p>Thank you for shopping with GMX FASHION INDIA. Your order has been saved and is currently awaiting processing.</p>
   {lastPlacedOrder&&<div className="contact-card" style={{textAlign:'left',margin:'24px auto',maxWidth:'520px'}}><p><b>Order number:</b> {lastPlacedOrder.order_number}</p><p><b>Status:</b> Pending</p><p><b>Total:</b> {new Intl.NumberFormat(undefined,{style:'currency',currency:lastPlacedOrder.currency||country}).format(Number(lastPlacedOrder.total)||0)}</p></div>}
-  <p className="muted">Our team will confirm shipping charges, duties, taxes and payment arrangements separately.</p>
+  <p className="muted">Your order has been received. Please complete the transfer using the payment details shown at checkout. Our team will verify the money received in the wallet or bank account and update your payment status. Final shipping charges, duties and taxes may be confirmed before dispatch.</p>
   <button className="solid" onClick={()=>setPage('account')}>VIEW MY ORDERS</button> <button className="outline" onClick={()=>{setPage('shop');setCat('All Collections')}}>CONTINUE SHOPPING</button>
  </section>}
  {page==='wholesale'&&<section className="section form-page"><label>GLOBAL SOURCING · WHOLESALE & EXPORT</label><h2>Become our international<br/><i>business partner.</i></h2><p>Partner with GMX FASHION INDIA to source authentic Indian fashion, spiritual products, traditional accessories and lifestyle collections for your market.</p><form onSubmit={e=>{e.preventDefault();setNotice('Thank you. Your enquiry has been prepared. Please send it to our team on WhatsApp.');}}><div className="form-grid">{['Full Name','Company Name','Country','Email','WhatsApp Number','Product Category','Required Quantity'].map((x,i)=><label>{x}<input required={i===0||i===3} placeholder={x}/></label>)}</div><label>Message<textarea placeholder="Tell us about the products and quantities you are interested in."/></label><button className="solid">SUBMIT ENQUIRY <ArrowRight/></button><a className="wa-inline" href={wa} target="_blank">OR CHAT WITH OUR TEAM ON WHATSAPP</a></form></section>}
@@ -328,6 +331,7 @@ export default function App(){
        {ordersBusy?<p>Loading your orders...</p>:orderHistory.length===0?<p>You have not placed any orders yet.</p>:<div style={{display:'grid',gap:'14px',marginTop:'14px'}}>{orderHistory.map(o=><div key={o.id} style={{border:'1px solid #e8e0d8',borderRadius:'10px',padding:'15px'}}>
         <div style={{display:'flex',justifyContent:'space-between',gap:'12px',flexWrap:'wrap'}}><b>{o.order_number||'Order'}</b><span style={{border:'1px solid #d8c7ae',borderRadius:'20px',padding:'4px 10px',fontSize:'12px'}}>{o.status||'Pending'}</span></div>
         <p style={{margin:'8px 0'}}>Date: {o.created_at?new Date(o.created_at).toLocaleString():'—'} · Total: {new Intl.NumberFormat(undefined,{style:'currency',currency:o.currency||country}).format(Number(o.total)||0)}</p>
+        <p style={{margin:'6px 0',fontSize:'14px'}}>Payment: <b>{{usdt:'USDT · Polygon',mexico:'Mexico Bank Transfer',usa:'USA Bank Transfer'}[o.payment_method]||o.payment_method||'Not recorded'}</b> · Payment status: <b>{o.payment_status||'Pending'}</b></p>
         {(orderItemsById[o.id]||[]).map(line=><p key={line.id} style={{margin:'5px 0',fontSize:'14px'}}>{line.product_name} × {line.quantity}{line.variant_size||line.variant_color?` · ${line.variant_size||''} ${line.variant_color||''}`:''}</p>)}
         {(o.courier_name||o.tracking_number||o.tracking_url||o.shipped_at)&&<div style={{marginTop:'12px',padding:'13px',border:'1px solid #dbeafe',borderRadius:'10px',background:'#f8fbff'}}>
          <b style={{display:'block',marginBottom:'8px'}}>Shipment & Tracking</b>
