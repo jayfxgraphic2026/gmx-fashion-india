@@ -119,11 +119,28 @@ export default function Admin() {
       setMessage('Product saved successfully.');setForm({...blank});setPhotos([]);await loadProducts();
     }catch(err){setMessage('Save failed: '+(err.message||'Unknown error'));}finally{setSaving(false);}
   }
+  async function toggleProductArchive(product){
+    const nextActive=product.active===false;
+    const action=nextActive?'restore':'archive';
+    if(!window.confirm(nextActive?'Restore this product to the customer website?':'Archive this product? It will be hidden from the customer website, while existing orders remain unchanged.'))return;
+    setMessage(nextActive?'Restoring product...':'Archiving product...');
+    const {error}=await supabase.from('products').update({active:nextActive}).eq('id',product.id);
+    if(error){setMessage('Could not '+action+' product: '+error.message);return;}
+    setProducts(prev=>prev.map(p=>p.id===product.id?{...p,active:nextActive}:p));
+    if(selectedProduct?.id===product.id)setSelectedProduct(prev=>prev?{...prev,active:nextActive}:prev);
+    setMessage(nextActive?'Product restored and visible on the website.':'Product archived. It is hidden from the website; existing order records are preserved.');
+  }
   async function deleteProduct(id){
-    if(!window.confirm('Are you sure you want to delete this product?'))return;
+    if(!window.confirm('Permanently delete this product? This is only possible when no saved order items reference it. For products in previous orders, use ARCHIVE instead.'))return;
     const {error}=await supabase.from('products').delete().eq('id',id);
-    if(error){setMessage('Delete failed: '+error.message);return;}
-    if(selectedProduct?.id===id)closeVariants();setMessage('Product deleted.');await loadProducts();
+    if(error){
+      const msg=String(error.message||'');
+      if(msg.includes('order_items_product_id_fkey')||msg.toLowerCase().includes('foreign key')){
+        setMessage('This product is linked to an existing order and cannot be permanently deleted. Use ARCHIVE to hide it while keeping order history safe.');
+      }else setMessage('Delete failed: '+msg);
+      return;
+    }
+    if(selectedProduct?.id===id)closeVariants();setMessage('Product permanently deleted.');await loadProducts();
   }
   function closeVariants(){setSelectedProduct(null);setVariants([]);setVariantForm({...blankVariant});setVariantPhoto(null);setVariantMessage('');}
   async function openVariants(product){
@@ -198,35 +215,10 @@ export default function Admin() {
   }
   async function updateOrderStatus(orderId,status){
     setUpdatingOrder(orderId);setOrderMessage('Updating order...');
-    try {
-      const {error}=await supabase.from('orders').update({status}).eq('id',orderId);
-      if(error){setOrderMessage('Status update failed: '+error.message);return;}
-      setOrders(prev=>prev.map(o=>o.id===orderId?{...o,status}:o));
-      setOrderMessage('Order status saved. Sending customer notification...');
-      const {data:notifyData,error:notifyError}=await supabase.functions.invoke('order-status-notification',{body:{order_id:orderId,status}});
-      if(notifyError){
-        setOrderMessage('Order status saved, but notification failed: '+notifyError.message);
-      } else if(notifyData?.warning || notifyData?.error){
-        setOrderMessage('Order status saved, but notification was not sent: '+(notifyData.warning||notifyData.error));
-      } else {
-        setOrderMessage('Order status saved. Notification function responded successfully. Please verify the email inbox.');
-      }
-    } catch(err) {
-      setOrderMessage('Order status saved/updated may need checking. Notification request error: '+(err?.message||'Unknown error'));
-    } finally {
-      setUpdatingOrder('');
-    }
-  }
-  async function updatePaymentStatus(orderId,paymentStatus){
-    setUpdatingOrder(orderId);setOrderMessage('Updating payment status...');
-    try{
-      const payload={payment_status:paymentStatus,...(paymentStatus==='Paid'?{paid_at:new Date().toISOString()}:{paid_at:null})};
-      const {error}=await supabase.from('orders').update(payload).eq('id',orderId);
-      if(error)throw error;
-      setOrders(prev=>prev.map(o=>o.id===orderId?{...o,...payload}:o));
-      setOrderMessage(paymentStatus==='Paid'?'Payment marked as verified. Please ensure the funds are visible in the receiving wallet/bank account.':'Payment status updated.');
-    }catch(err){setOrderMessage('Payment status update failed: '+(err?.message||'Unknown error'));}
-    finally{setUpdatingOrder('');}
+    const {error}=await supabase.from('orders').update({status}).eq('id',orderId);
+    if(error){setOrderMessage('Status update failed: '+error.message);}
+    else {setOrders(prev=>prev.map(o=>o.id===orderId?{...o,status}:o));setOrderMessage('Order status updated.');}
+    setUpdatingOrder('');
   }
   function changeOrderField(orderId,field,value){
     setOrders(prev=>prev.map(o=>o.id===orderId?{...o,[field]:value}:o));
@@ -264,20 +256,7 @@ export default function Admin() {
     {activeTab==='dashboard'&&<section style={s.card}><h2>Dashboard Overview</h2><div style={s.stats}>{[['Total Orders',stats.orders],['Pending Orders',stats.pending],['Customers',stats.customers],['Products',stats.products],['Order Value',money(stats.sales,'USD')]].map(([label,value])=><div key={label} style={s.stat}><small>{label}</small><h2>{value}</h2></div>)}</div><button style={s.secondary} onClick={()=>{loadOrders();loadProducts();}}>REFRESH DASHBOARD</button></section>}
     {activeTab==='orders'&&<section style={s.card}><div style={s.sectionHead}><h2>Customer Orders ({orders.length})</h2><button type="button" style={s.secondary} onClick={loadOrders}>REFRESH</button></div>{orderMessage&&<p style={s.notice}>{orderMessage}</p>}<label>Filter Orders</label><select style={s.input} value={orderFilter} onChange={e=>setOrderFilter(e.target.value)}>{['All',...ORDER_STATUSES].map(v=><option key={v}>{v}</option>)}</select>
       {filteredOrders.length===0&&<p>No orders found for this filter.</p>}
-      {filteredOrders.map(o=><article key={o.id} style={s.order}><div style={s.sectionHead}><div><b>Order: {o.order_number||o.id}</b><p>{o.customer_email||'No customer email'} · {o.country||'Country not set'} · {new Date(o.created_at).toLocaleString()}</p></div><strong>{money(o.total,o.currency||'USD')}</strong></div><p><b>Delivery:</b> {addressText(o.shipping_address)}</p>
-        <div style={{margin:'12px 0',padding:'14px',border:'1px solid #dbe3ef',borderRadius:'10px',background:'#f8fafc'}}>
-          <h4 style={{margin:'0 0 10px'}}>Payment Verification</h4>
-          <p style={{margin:'5px 0'}}><b>Method:</b> {({usdt:'USDT · Polygon',mexico:'Mexico Bank Transfer',usa:'USA Bank Transfer'})[o.payment_method]||o.payment_method||'Not recorded (older order)'}</p>
-          <p style={{margin:'5px 0'}}><b>Payment status:</b> {o.payment_status||'Pending'}</p>
-          <p style={{margin:'5px 0',overflowWrap:'anywhere'}}><b>Transaction / bank reference:</b> {o.payment_reference||'Not submitted'}</p>
-          {o.paid_at&&<p style={{margin:'5px 0'}}><b>Verified at:</b> {new Date(o.paid_at).toLocaleString()}</p>}
-          <div style={{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'center',marginTop:'10px'}}>
-            <button type='button' style={s.button} disabled={updatingOrder===o.id||o.payment_status==='Paid'} onClick={()=>{if(window.confirm('Confirm that the funds are visible in the receiving wallet or bank account, then mark this payment as Paid?'))updatePaymentStatus(o.id,'Paid');}}>MARK PAYMENT VERIFIED</button>
-            <button type='button' style={s.secondary} disabled={updatingOrder===o.id||o.payment_status!=='Paid'} onClick={()=>updatePaymentStatus(o.id,'Pending')}>RESET TO PENDING</button>
-          </div>
-          <small style={{display:'block',marginTop:'8px',color:'#475569'}}>Only mark Paid after checking the actual wallet/bank receipt. A customer-submitted TXID or screenshot alone is not proof of received funds.</small>
-        </div>
-        <div style={s.stats}><div><small>Subtotal</small><b>{money(o.subtotal,o.currency)}</b></div><div><small>Shipping</small><b>{money(o.shipping,o.currency)}</b></div><div><small>Tax / Duty</small><b>{money(o.tax,o.currency)}</b></div></div><h4>Products</h4>{itemsFor(o.id).length?itemsFor(o.id).map((it,idx)=><div key={it.id||idx} style={s.orderItem}><span>{it.product_name||it.product_id||'Product'}{it.variant_size||it.variant_color?` — ${[it.variant_size,it.variant_color].filter(Boolean).join(' / ')}`:''} · Qty {it.quantity}</span><b>{money(Number(it.unit_price||0)*Number(it.quantity||0),o.currency)}</b></div>):<p>No order items found.</p>}<div style={s.statusRow}><label>Order Status</label><select style={{...s.input,maxWidth:'240px',margin:0}} value={o.status||'Pending'} disabled={updatingOrder===o.id} onChange={e=>updateOrderStatus(o.id,e.target.value)}>{ORDER_STATUSES.map(v=><option key={v}>{v}</option>)}</select><button type="button" style={s.button} disabled={updatingOrder===o.id || o.status==='Confirmed'} onClick={()=>updateOrderStatus(o.id,'Confirmed')}>CONFIRM ORDER</button><button type="button" style={s.delete} disabled={updatingOrder===o.id || o.status==='Cancelled'} onClick={()=>{if(window.confirm('Cancel this customer order?'))updateOrderStatus(o.id,'Cancelled');}}>CANCEL ORDER</button>{updatingOrder===o.id&&<small>Updating…</small>}</div>
+      {filteredOrders.map(o=><article key={o.id} style={s.order}><div style={s.sectionHead}><div><b>Order: {o.order_number||o.id}</b><p>{o.customer_email||'No customer email'} · {o.country||'Country not set'} · {new Date(o.created_at).toLocaleString()}</p></div><strong>{money(o.total,o.currency||'USD')}</strong></div><p><b>Delivery:</b> {addressText(o.shipping_address)}</p><div style={s.stats}><div><small>Subtotal</small><b>{money(o.subtotal,o.currency)}</b></div><div><small>Shipping</small><b>{money(o.shipping,o.currency)}</b></div><div><small>Tax / Duty</small><b>{money(o.tax,o.currency)}</b></div></div><h4>Products</h4>{itemsFor(o.id).length?itemsFor(o.id).map((it,idx)=><div key={it.id||idx} style={s.orderItem}><span>{it.product_name||it.product_id||'Product'}{it.variant_size||it.variant_color?` — ${[it.variant_size,it.variant_color].filter(Boolean).join(' / ')}`:''} · Qty {it.quantity}</span><b>{money(Number(it.unit_price||0)*Number(it.quantity||0),o.currency)}</b></div>):<p>No order items found.</p>}<div style={s.statusRow}><label>Order Status</label><select style={{...s.input,maxWidth:'240px',margin:0}} value={o.status||'Pending'} disabled={updatingOrder===o.id} onChange={e=>updateOrderStatus(o.id,e.target.value)}>{ORDER_STATUSES.map(v=><option key={v}>{v}</option>)}</select><button type="button" style={s.button} disabled={updatingOrder===o.id || o.status==='Confirmed'} onClick={()=>updateOrderStatus(o.id,'Confirmed')}>CONFIRM ORDER</button><button type="button" style={s.delete} disabled={updatingOrder===o.id || o.status==='Cancelled'} onClick={()=>{if(window.confirm('Cancel this customer order?'))updateOrderStatus(o.id,'Cancelled');}}>CANCEL ORDER</button>{updatingOrder===o.id&&<small>Updating…</small>}</div>
         <div style={s.trackingBox}>
           <h4 style={{margin:'4px 0 12px',color:'#172554'}}>Shipment & Tracking Details</h4>
           <div style={s.trackingGrid}>
@@ -340,7 +319,7 @@ export default function Admin() {
         <p><button disabled={saving} style={s.button}>{saving?'SAVING...':'SAVE PRODUCT'}</button><button type="button" style={s.secondary} onClick={()=>{setForm({...blank});setPhotos([]);setMessage('Form cleared.');}}>CLEAR FORM</button></p>
       </form></section>
       {selectedProduct&&<section style={s.card}><h2>Size & Colour — {selectedProduct.name}</h2><button type="button" style={s.secondary} onClick={closeVariants}>CLOSE</button><form onSubmit={saveVariant}><label>Size (S, M, L, XL, XXL)</label><input style={s.input} value={variantForm.size} onChange={e=>setVariantForm({...variantForm,size:e.target.value})} required/><label>Colour</label><input style={s.input} placeholder="Black, White, Blue..." value={variantForm.color} onChange={e=>setVariantForm({...variantForm,color:e.target.value})} required/><label>Variant SKU</label><input style={s.input} value={variantForm.sku} onChange={e=>setVariantForm({...variantForm,sku:e.target.value})}/><label>Variant Stock</label><input style={s.input} type="number" min="0" value={variantForm.stock} onChange={e=>setVariantForm({...variantForm,stock:e.target.value})}/><label>Variant image (optional)</label><input style={s.input} type="file" accept="image/*" onChange={e=>setVariantPhoto(e.target.files?.[0]||null)}/><input style={s.input} type="url" placeholder="Or paste an image URL" value={variantForm.image_url} onChange={e=>setVariantForm({...variantForm,image_url:e.target.value})}/><button disabled={variantSaving} style={s.button} type="submit">{variantSaving?'SAVING...':'SAVE VARIANT'}</button></form>{variantMessage&&<p>{variantMessage}</p>}<h3>Saved Variants ({variants.length})</h3>{variants.length===0&&<p>No variants added yet.</p>}{variants.map(v=><article key={v.id} style={s.product}>{v.image_url&&<img src={v.image_url} alt={`${v.color} ${v.size}`} style={s.image}/>}<div style={{flex:1}}><b>Size: {v.size} | Colour: {v.color}</b><p>SKU: {v.sku||'Not set'} · Stock: {v.stock}</p><small>{v.active?'Active':'Hidden'}</small></div><button type="button" style={s.delete} onClick={()=>deleteVariant(v.id)}>DELETE</button></article>)}</section>}
-      <section style={s.card}><h2>Manage Products ({products.length})</h2><button type="button" style={s.secondary} onClick={loadProducts}>REFRESH</button>{products.map(p=><article key={p.id} style={s.product}>{(p.image||p.images?.[0])&&<img src={p.image||p.images[0]} alt={p.name} style={s.image}/>}<div style={{flex:1}}><b>{p.name}</b><p>{p.category} · ${p.price}</p><small>{p.active?'Active':'Hidden'} · {(Array.isArray(p.images)?p.images.length:(p.image?1:0))} image(s)</small></div>{needsVariants(p)&&<button type="button" style={s.secondary} onClick={()=>openVariants(p)}>SIZE & COLOUR</button>}<button type="button" style={s.secondary} onClick={()=>editProduct(p)}>EDIT</button><button type="button" style={s.delete} onClick={()=>deleteProduct(p.id)}>DELETE</button></article>)}</section>
+      <section style={s.card}><h2>Manage Products ({products.length})</h2><button type="button" style={s.secondary} onClick={loadProducts}>REFRESH</button>{products.map(p=><article key={p.id} style={s.product}>{(p.image||p.images?.[0])&&<img src={p.image||p.images[0]} alt={p.name} style={s.image}/>}<div style={{flex:1}}><b>{p.name}</b><p>{p.category} · ${p.price}</p><small>{p.active?'Active on website':'Archived / Hidden'} · {(Array.isArray(p.images)?p.images.length:(p.image?1:0))} image(s)</small></div>{needsVariants(p)&&<button type="button" style={s.secondary} onClick={()=>openVariants(p)}>SIZE & COLOUR</button>}<button type="button" style={s.secondary} onClick={()=>editProduct(p)}>EDIT</button><button type="button" style={s.secondary} onClick={()=>toggleProductArchive(p)}>{p.active===false?'RESTORE':'ARCHIVE / HIDE'}</button><button type="button" style={s.delete} onClick={()=>deleteProduct(p.id)}>DELETE</button></article>)}</section>
     </>}
   </main>;
 }
