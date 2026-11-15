@@ -198,10 +198,24 @@ export default function Admin() {
   }
   async function updateOrderStatus(orderId,status){
     setUpdatingOrder(orderId);setOrderMessage('Updating order...');
-    const {error}=await supabase.from('orders').update({status}).eq('id',orderId);
-    if(error){setOrderMessage('Status update failed: '+error.message);}
-    else {setOrders(prev=>prev.map(o=>o.id===orderId?{...o,status}:o));setOrderMessage('Order status updated.');}
-    setUpdatingOrder('');
+    try {
+      const {error}=await supabase.from('orders').update({status}).eq('id',orderId);
+      if(error){setOrderMessage('Status update failed: '+error.message);return;}
+      setOrders(prev=>prev.map(o=>o.id===orderId?{...o,status}:o));
+      setOrderMessage('Order status saved. Sending customer notification...');
+      const {data:notifyData,error:notifyError}=await supabase.functions.invoke('order-status-notification',{body:{order_id:orderId,status}});
+      if(notifyError){
+        setOrderMessage('Order status saved, but notification failed: '+notifyError.message);
+      } else if(notifyData?.warning || notifyData?.error){
+        setOrderMessage('Order status saved, but notification was not sent: '+(notifyData.warning||notifyData.error));
+      } else {
+        setOrderMessage('Order status saved. Notification function responded successfully. Please verify the email inbox.');
+      }
+    } catch(err) {
+      setOrderMessage('Order status saved/updated may need checking. Notification request error: '+(err?.message||'Unknown error'));
+    } finally {
+      setUpdatingOrder('');
+    }
   }
   function changeOrderField(orderId,field,value){
     setOrders(prev=>prev.map(o=>o.id===orderId?{...o,[field]:value}:o));
