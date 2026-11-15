@@ -217,6 +217,17 @@ export default function Admin() {
       setUpdatingOrder('');
     }
   }
+  async function updatePaymentStatus(orderId,paymentStatus){
+    setUpdatingOrder(orderId);setOrderMessage('Updating payment status...');
+    try{
+      const payload={payment_status:paymentStatus,...(paymentStatus==='Paid'?{paid_at:new Date().toISOString()}:{paid_at:null})};
+      const {error}=await supabase.from('orders').update(payload).eq('id',orderId);
+      if(error)throw error;
+      setOrders(prev=>prev.map(o=>o.id===orderId?{...o,...payload}:o));
+      setOrderMessage(paymentStatus==='Paid'?'Payment marked as verified. Please ensure the funds are visible in the receiving wallet/bank account.':'Payment status updated.');
+    }catch(err){setOrderMessage('Payment status update failed: '+(err?.message||'Unknown error'));}
+    finally{setUpdatingOrder('');}
+  }
   function changeOrderField(orderId,field,value){
     setOrders(prev=>prev.map(o=>o.id===orderId?{...o,[field]:value}:o));
   }
@@ -253,7 +264,20 @@ export default function Admin() {
     {activeTab==='dashboard'&&<section style={s.card}><h2>Dashboard Overview</h2><div style={s.stats}>{[['Total Orders',stats.orders],['Pending Orders',stats.pending],['Customers',stats.customers],['Products',stats.products],['Order Value',money(stats.sales,'USD')]].map(([label,value])=><div key={label} style={s.stat}><small>{label}</small><h2>{value}</h2></div>)}</div><button style={s.secondary} onClick={()=>{loadOrders();loadProducts();}}>REFRESH DASHBOARD</button></section>}
     {activeTab==='orders'&&<section style={s.card}><div style={s.sectionHead}><h2>Customer Orders ({orders.length})</h2><button type="button" style={s.secondary} onClick={loadOrders}>REFRESH</button></div>{orderMessage&&<p style={s.notice}>{orderMessage}</p>}<label>Filter Orders</label><select style={s.input} value={orderFilter} onChange={e=>setOrderFilter(e.target.value)}>{['All',...ORDER_STATUSES].map(v=><option key={v}>{v}</option>)}</select>
       {filteredOrders.length===0&&<p>No orders found for this filter.</p>}
-      {filteredOrders.map(o=><article key={o.id} style={s.order}><div style={s.sectionHead}><div><b>Order: {o.order_number||o.id}</b><p>{o.customer_email||'No customer email'} · {o.country||'Country not set'} · {new Date(o.created_at).toLocaleString()}</p></div><strong>{money(o.total,o.currency||'USD')}</strong></div><p><b>Delivery:</b> {addressText(o.shipping_address)}</p><div style={s.stats}><div><small>Subtotal</small><b>{money(o.subtotal,o.currency)}</b></div><div><small>Shipping</small><b>{money(o.shipping,o.currency)}</b></div><div><small>Tax / Duty</small><b>{money(o.tax,o.currency)}</b></div></div><h4>Products</h4>{itemsFor(o.id).length?itemsFor(o.id).map((it,idx)=><div key={it.id||idx} style={s.orderItem}><span>{it.product_name||it.product_id||'Product'}{it.variant_size||it.variant_color?` — ${[it.variant_size,it.variant_color].filter(Boolean).join(' / ')}`:''} · Qty {it.quantity}</span><b>{money(Number(it.unit_price||0)*Number(it.quantity||0),o.currency)}</b></div>):<p>No order items found.</p>}<div style={s.statusRow}><label>Order Status</label><select style={{...s.input,maxWidth:'240px',margin:0}} value={o.status||'Pending'} disabled={updatingOrder===o.id} onChange={e=>updateOrderStatus(o.id,e.target.value)}>{ORDER_STATUSES.map(v=><option key={v}>{v}</option>)}</select><button type="button" style={s.button} disabled={updatingOrder===o.id || o.status==='Confirmed'} onClick={()=>updateOrderStatus(o.id,'Confirmed')}>CONFIRM ORDER</button><button type="button" style={s.delete} disabled={updatingOrder===o.id || o.status==='Cancelled'} onClick={()=>{if(window.confirm('Cancel this customer order?'))updateOrderStatus(o.id,'Cancelled');}}>CANCEL ORDER</button>{updatingOrder===o.id&&<small>Updating…</small>}</div>
+      {filteredOrders.map(o=><article key={o.id} style={s.order}><div style={s.sectionHead}><div><b>Order: {o.order_number||o.id}</b><p>{o.customer_email||'No customer email'} · {o.country||'Country not set'} · {new Date(o.created_at).toLocaleString()}</p></div><strong>{money(o.total,o.currency||'USD')}</strong></div><p><b>Delivery:</b> {addressText(o.shipping_address)}</p>
+        <div style={{margin:'12px 0',padding:'14px',border:'1px solid #dbe3ef',borderRadius:'10px',background:'#f8fafc'}}>
+          <h4 style={{margin:'0 0 10px'}}>Payment Verification</h4>
+          <p style={{margin:'5px 0'}}><b>Method:</b> {({usdt:'USDT · Polygon',mexico:'Mexico Bank Transfer',usa:'USA Bank Transfer'})[o.payment_method]||o.payment_method||'Not recorded (older order)'}</p>
+          <p style={{margin:'5px 0'}}><b>Payment status:</b> {o.payment_status||'Pending'}</p>
+          <p style={{margin:'5px 0',overflowWrap:'anywhere'}}><b>Transaction / bank reference:</b> {o.payment_reference||'Not submitted'}</p>
+          {o.paid_at&&<p style={{margin:'5px 0'}}><b>Verified at:</b> {new Date(o.paid_at).toLocaleString()}</p>}
+          <div style={{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'center',marginTop:'10px'}}>
+            <button type='button' style={s.button} disabled={updatingOrder===o.id||o.payment_status==='Paid'} onClick={()=>{if(window.confirm('Confirm that the funds are visible in the receiving wallet or bank account, then mark this payment as Paid?'))updatePaymentStatus(o.id,'Paid');}}>MARK PAYMENT VERIFIED</button>
+            <button type='button' style={s.secondary} disabled={updatingOrder===o.id||o.payment_status!=='Paid'} onClick={()=>updatePaymentStatus(o.id,'Pending')}>RESET TO PENDING</button>
+          </div>
+          <small style={{display:'block',marginTop:'8px',color:'#475569'}}>Only mark Paid after checking the actual wallet/bank receipt. A customer-submitted TXID or screenshot alone is not proof of received funds.</small>
+        </div>
+        <div style={s.stats}><div><small>Subtotal</small><b>{money(o.subtotal,o.currency)}</b></div><div><small>Shipping</small><b>{money(o.shipping,o.currency)}</b></div><div><small>Tax / Duty</small><b>{money(o.tax,o.currency)}</b></div></div><h4>Products</h4>{itemsFor(o.id).length?itemsFor(o.id).map((it,idx)=><div key={it.id||idx} style={s.orderItem}><span>{it.product_name||it.product_id||'Product'}{it.variant_size||it.variant_color?` — ${[it.variant_size,it.variant_color].filter(Boolean).join(' / ')}`:''} · Qty {it.quantity}</span><b>{money(Number(it.unit_price||0)*Number(it.quantity||0),o.currency)}</b></div>):<p>No order items found.</p>}<div style={s.statusRow}><label>Order Status</label><select style={{...s.input,maxWidth:'240px',margin:0}} value={o.status||'Pending'} disabled={updatingOrder===o.id} onChange={e=>updateOrderStatus(o.id,e.target.value)}>{ORDER_STATUSES.map(v=><option key={v}>{v}</option>)}</select><button type="button" style={s.button} disabled={updatingOrder===o.id || o.status==='Confirmed'} onClick={()=>updateOrderStatus(o.id,'Confirmed')}>CONFIRM ORDER</button><button type="button" style={s.delete} disabled={updatingOrder===o.id || o.status==='Cancelled'} onClick={()=>{if(window.confirm('Cancel this customer order?'))updateOrderStatus(o.id,'Cancelled');}}>CANCEL ORDER</button>{updatingOrder===o.id&&<small>Updating…</small>}</div>
         <div style={s.trackingBox}>
           <h4 style={{margin:'4px 0 12px',color:'#172554'}}>Shipment & Tracking Details</h4>
           <div style={s.trackingGrid}>
