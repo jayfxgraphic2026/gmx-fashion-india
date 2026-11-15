@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from './supabase';
 
-const categories = ['Women', 'Men', 'Muslim Collection', 'Jewellery', 'Puja & Spiritual', 'Handicrafts', 'Leather', 'Perfumes', 'Incense'];
-const clothingCategories = ['Women', 'Men', 'Muslim Collection'];
-const blank = { id:'', originalName:'', name:'', sku:'', slug:'', category:'Women', subcategory:'', description:'', price:'', stock:0, material:'', origin:'India', image:'', images:[], active:true, rating:'', reviews:0 };
+const categories = ['Luxury Premium Apparels & Layering','Fine Jewelry Collection','Spiritual & Puja Essentials','Modern Western & Streetwear','Cultural & Multireligious Lines','Aromatics & Lifestyle Fragrances'];
+const clothingCategories = ['Luxury Premium Apparels & Layering','Modern Western & Streetwear','Cultural & Multireligious Lines'];
+const westernTerms=/leather jacket|winter coat|coat|sweater|hoodie|tracksuit|track suit|pajama|streetwear/i;
+function needsVariants(p){const text=`${p.name||''} ${p.subcategory||''}`;return p.category==='Luxury Premium Apparels & Layering'||p.category==='Modern Western & Streetwear'||(p.category==='Cultural & Multireligious Lines'&&/kurta|abaya|hijab|jutti|topi|apparel|clothing/i.test(text));}
+function collectionForProduct(p){const raw=String(p.category||'').toLowerCase();const words=`${p.name||''} ${p.subcategory||''} ${p.description||''}`;const all=(raw+' '+words).toLowerCase();if(/jewell|jhumka|necklace|earring|bracelet|pendant/.test(all))return 'Fine Jewelry Collection';if(/perfume|attar|fragrance|agarbatti|incense|brass holder/.test(all))return 'Aromatics & Lifestyle Fragrances';if(/puja|spiritual|rudraksha|tulsi|shankh|conch|dhoti|chanting|altar|om mala/.test(all))return 'Spiritual & Puja Essentials';if(/muslim|abaya|hijab|prayer mat|topi|punjabi jutti|japanese fusion|handicraft/.test(all))return 'Cultural & Multireligious Lines';if(westernTerms.test(words)||/leather/.test(raw))return 'Modern Western & Streetwear';if(/women|men|apparel|clothing|shawl|shrug|poncho|kaftan|cord set/.test(all))return 'Luxury Premium Apparels & Layering';if(categories.includes(p.category))return p.category;return 'Cultural & Multireligious Lines';}
+const blank = { id:'', originalName:'', name:'', sku:'', slug:'', category:'Luxury Premium Apparels & Layering', subcategory:'', description:'', price:'', stock:0, material:'', origin:'India', image:'', images:[], active:true, rating:'', reviews:0 };
 const blankVariant = { size:'', color:'', sku:'', stock:0, image_url:'' };
 const ORDER_STATUSES = ['Pending','Confirmed','Processing','Shipped','Delivered','Cancelled'];
 
@@ -80,7 +83,7 @@ export default function Admin() {
   }
   async function loadProducts(){
     const {data,error}=await supabase.from('products').select('*').order('created_at',{ascending:false});
-    if(error){setMessage('Could not load products: '+error.message);return;} setProducts(data||[]);
+    if(error){setMessage('Could not load products: '+error.message);return;} setProducts((data||[]).map(p=>({...p,category:collectionForProduct(p)})));
   }
   async function uploadImages(files, prefix='product'){
     const urls=[];
@@ -96,7 +99,7 @@ export default function Admin() {
   function editProduct(p){
     const imgs=Array.isArray(p.images)?p.images.filter(Boolean):[];
     const all=imgs.length?imgs:(p.image?[p.image]:[]);
-    setForm({id:p.id,originalName:p.name||'',name:p.name||'',sku:p.sku||'',slug:p.slug||'',category:p.category||'Women',subcategory:p.subcategory||'',description:p.description||'',price:p.price??'',stock:p.stock??0,material:p.material||'',origin:p.origin||'India',image:p.image||all[0]||'',images:all,active:p.active??true,rating:p.rating??'',reviews:p.reviews??0});
+    setForm({id:p.id,originalName:p.name||'',name:p.name||'',sku:p.sku||'',slug:p.slug||'',category:collectionForProduct(p),subcategory:p.subcategory||'',description:p.description||'',price:p.price??'',stock:p.stock??0,material:p.material||'',origin:p.origin||'India',image:p.image||all[0]||'',images:all,active:p.active??true,rating:p.rating??'',reviews:p.reviews??0});
     setPhotos([]);window.scrollTo(0,0);setActiveTab('products');
   }
   async function saveProduct(e){
@@ -124,7 +127,7 @@ export default function Admin() {
   }
   function closeVariants(){setSelectedProduct(null);setVariants([]);setVariantForm({...blankVariant});setVariantPhoto(null);setVariantMessage('');}
   async function openVariants(product){
-    if(!clothingCategories.includes(product.category)){setVariantMessage('Variants are only available for clothing categories.');return;}
+    if(!needsVariants(product)){setVariantMessage('Variants are only available for clothing categories.');return;}
     setSelectedProduct(product);setVariantForm({...blankVariant});setVariantPhoto(null);setVariantMessage('Loading variants...');
     const {data,error}=await supabase.from('product_variants').select('*').eq('product_id',product.id).order('created_at',{ascending:false});
     if(error){setVariants([]);setVariantMessage('Could not load variants: '+error.message);return;}
@@ -299,7 +302,7 @@ export default function Admin() {
         <p><button disabled={saving} style={s.button}>{saving?'SAVING...':'SAVE PRODUCT'}</button><button type="button" style={s.secondary} onClick={()=>{setForm({...blank});setPhotos([]);setMessage('Form cleared.');}}>CLEAR FORM</button></p>
       </form></section>
       {selectedProduct&&<section style={s.card}><h2>Size & Colour — {selectedProduct.name}</h2><button type="button" style={s.secondary} onClick={closeVariants}>CLOSE</button><form onSubmit={saveVariant}><label>Size (S, M, L, XL, XXL)</label><input style={s.input} value={variantForm.size} onChange={e=>setVariantForm({...variantForm,size:e.target.value})} required/><label>Colour</label><input style={s.input} placeholder="Black, White, Blue..." value={variantForm.color} onChange={e=>setVariantForm({...variantForm,color:e.target.value})} required/><label>Variant SKU</label><input style={s.input} value={variantForm.sku} onChange={e=>setVariantForm({...variantForm,sku:e.target.value})}/><label>Variant Stock</label><input style={s.input} type="number" min="0" value={variantForm.stock} onChange={e=>setVariantForm({...variantForm,stock:e.target.value})}/><label>Variant image (optional)</label><input style={s.input} type="file" accept="image/*" onChange={e=>setVariantPhoto(e.target.files?.[0]||null)}/><input style={s.input} type="url" placeholder="Or paste an image URL" value={variantForm.image_url} onChange={e=>setVariantForm({...variantForm,image_url:e.target.value})}/><button disabled={variantSaving} style={s.button} type="submit">{variantSaving?'SAVING...':'SAVE VARIANT'}</button></form>{variantMessage&&<p>{variantMessage}</p>}<h3>Saved Variants ({variants.length})</h3>{variants.length===0&&<p>No variants added yet.</p>}{variants.map(v=><article key={v.id} style={s.product}>{v.image_url&&<img src={v.image_url} alt={`${v.color} ${v.size}`} style={s.image}/>}<div style={{flex:1}}><b>Size: {v.size} | Colour: {v.color}</b><p>SKU: {v.sku||'Not set'} · Stock: {v.stock}</p><small>{v.active?'Active':'Hidden'}</small></div><button type="button" style={s.delete} onClick={()=>deleteVariant(v.id)}>DELETE</button></article>)}</section>}
-      <section style={s.card}><h2>Manage Products ({products.length})</h2><button type="button" style={s.secondary} onClick={loadProducts}>REFRESH</button>{products.map(p=><article key={p.id} style={s.product}>{(p.image||p.images?.[0])&&<img src={p.image||p.images[0]} alt={p.name} style={s.image}/>}<div style={{flex:1}}><b>{p.name}</b><p>{p.category} · ${p.price}</p><small>{p.active?'Active':'Hidden'} · {(Array.isArray(p.images)?p.images.length:(p.image?1:0))} image(s)</small></div>{clothingCategories.includes(p.category)&&<button type="button" style={s.secondary} onClick={()=>openVariants(p)}>SIZE & COLOUR</button>}<button type="button" style={s.secondary} onClick={()=>editProduct(p)}>EDIT</button><button type="button" style={s.delete} onClick={()=>deleteProduct(p.id)}>DELETE</button></article>)}</section>
+      <section style={s.card}><h2>Manage Products ({products.length})</h2><button type="button" style={s.secondary} onClick={loadProducts}>REFRESH</button>{products.map(p=><article key={p.id} style={s.product}>{(p.image||p.images?.[0])&&<img src={p.image||p.images[0]} alt={p.name} style={s.image}/>}<div style={{flex:1}}><b>{p.name}</b><p>{p.category} · ${p.price}</p><small>{p.active?'Active':'Hidden'} · {(Array.isArray(p.images)?p.images.length:(p.image?1:0))} image(s)</small></div>{needsVariants(p)&&<button type="button" style={s.secondary} onClick={()=>openVariants(p)}>SIZE & COLOUR</button>}<button type="button" style={s.secondary} onClick={()=>editProduct(p)}>EDIT</button><button type="button" style={s.delete} onClick={()=>deleteProduct(p.id)}>DELETE</button></article>)}</section>
     </>}
   </main>;
 }
