@@ -1,11 +1,26 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from './supabase';
 
-const categories = ['Luxury Premium Apparels & Layering','Fine Jewelry Collection','Spiritual & Puja Essentials','Modern Western & Streetwear','Cultural & Multireligious Lines','Aromatics & Lifestyle Fragrances'];
+const categories = ['Luxury Premium Apparels & Layering','Fine Jewelry Collection','Spiritual & Puja Essentials','Modern Western & Streetwear','Cultural & Multireligious Lines','Aromatics & Lifestyle Fragrances','INDIAN HANDICRAFTS'];
 const clothingCategories = ['Luxury Premium Apparels & Layering','Modern Western & Streetwear','Cultural & Multireligious Lines'];
 const westernTerms=/leather jacket|winter coat|coat|sweater|hoodie|tracksuit|track suit|pajama|streetwear/i;
 function needsVariants(p){const text=`${p.name||''} ${p.subcategory||''}`;return p.category==='Luxury Premium Apparels & Layering'||p.category==='Modern Western & Streetwear'||(p.category==='Cultural & Multireligious Lines'&&/kurta|abaya|hijab|jutti|topi|apparel|clothing/i.test(text));}
-function collectionForProduct(p){const raw=String(p.category||'').toLowerCase();const words=`${p.name||''} ${p.subcategory||''} ${p.description||''}`;const all=(raw+' '+words).toLowerCase();if(/jewell|jhumka|necklace|earring|bracelet|pendant/.test(all))return 'Fine Jewelry Collection';if(/perfume|attar|fragrance|agarbatti|incense|brass holder/.test(all))return 'Aromatics & Lifestyle Fragrances';if(/puja|spiritual|rudraksha|tulsi|shankh|conch|dhoti|chanting|altar|om mala/.test(all))return 'Spiritual & Puja Essentials';if(/muslim|abaya|hijab|prayer mat|topi|punjabi jutti|japanese fusion|handicraft/.test(all))return 'Cultural & Multireligious Lines';if(westernTerms.test(words)||/leather/.test(raw))return 'Modern Western & Streetwear';if(/women|men|apparel|clothing|shawl|shrug|poncho|kaftan|cord set/.test(all))return 'Luxury Premium Apparels & Layering';if(categories.includes(p.category))return p.category;return 'Cultural & Multireligious Lines';}
+function collectionForProduct(p){
+ const stored=String(p.category||'').trim();
+ const exact=categories.find(c=>c.toLowerCase()===stored.toLowerCase());
+ if(exact)return exact;
+ const raw=stored.toLowerCase();
+ const words=`${p.name||''} ${p.subcategory||''} ${p.description||''}`.toLowerCase();
+ const combined=raw+' '+words;
+ if(/indian handicrafts|handicraft|handcrafted|handmade craft|artisan craft/.test(combined))return 'INDIAN HANDICRAFTS';
+ if(/jewell|jhumka|necklace|earring|bracelet|pendant/.test(combined))return 'Fine Jewelry Collection';
+ if(/perfume|attar|fragrance|agarbatti|incense|brass holder/.test(combined))return 'Aromatics & Lifestyle Fragrances';
+ if(/puja|spiritual|rudraksha|tulsi|shankh|conch|dhoti|chanting|altar|om mala/.test(combined))return 'Spiritual & Puja Essentials';
+ if(/muslim|abaya|hijab|prayer mat|topi|punjabi jutti|japanese fusion/.test(combined))return 'Cultural & Multireligious Lines';
+ if(westernTerms.test(words)||/leather/.test(raw))return 'Modern Western & Streetwear';
+ if(/women|men|apparel|clothing|shawl|shrug|poncho|kaftan|cord set/.test(combined))return 'Luxury Premium Apparels & Layering';
+ return 'Cultural & Multireligious Lines';
+}
 const blank = { id:'', originalName:'', name:'', sku:'', slug:'', category:'Luxury Premium Apparels & Layering', subcategory:'', description:'', price:'', stock:0, material:'', origin:'India', image:'', images:[], active:true, rating:'', reviews:0 };
 const blankVariant = { size:'', color:'', sku:'', stock:0, image_url:'' };
 const ORDER_STATUSES = ['Pending','Confirmed','Processing','Shipped','Delivered','Cancelled'];
