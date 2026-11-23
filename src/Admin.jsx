@@ -228,6 +228,24 @@ export default function Admin() {
     if(error){setShippingMessage('Delete failed: '+error.message);return;}
     setShippingMessage('Shipping rate deleted.');await loadShippingRates();
   }
+  async function deleteOrder(order){
+    const orderLabel=order.order_number||order.id;
+    if(!window.confirm(`Permanently delete order ${orderLabel}? Its saved order items will also be deleted. This action cannot be undone.`))return;
+    setOrderMessage(`Deleting order ${orderLabel}...`);
+    // Remove dependent line items first so the order can be deleted when the
+    // database uses a restrictive foreign-key relationship.
+    const {error:itemDeleteError}=await supabase.from('order_items').delete().eq('order_id',order.id);
+    if(itemDeleteError){setOrderMessage('Order was not deleted. Could not remove its order items: '+itemDeleteError.message);return;}
+    const {error:orderDeleteError}=await supabase.from('orders').delete().eq('id',order.id);
+    if(orderDeleteError){
+      setOrderMessage('Order could not be deleted: '+orderDeleteError.message+'. Its order items may already have been removed; refresh the orders list.');
+      await loadOrders();
+      return;
+    }
+    setOrders(prev=>prev.filter(o=>o.id!==order.id));
+    setOrderItems(prev=>prev.filter(item=>item.order_id!==order.id));
+    setOrderMessage(`Order ${orderLabel} permanently deleted.`);
+  }
   async function updateOrderStatus(orderId,status){
     setUpdatingOrder(orderId);setOrderMessage('Updating order...');
     const {error}=await supabase.from('orders').update({status}).eq('id',orderId);
@@ -271,7 +289,7 @@ export default function Admin() {
     {activeTab==='dashboard'&&<section style={s.card}><h2>Dashboard Overview</h2><div style={s.stats}>{[['Total Orders',stats.orders],['Pending Orders',stats.pending],['Customers',stats.customers],['Products',stats.products],['Order Value',money(stats.sales,'USD')]].map(([label,value])=><div key={label} style={s.stat}><small>{label}</small><h2>{value}</h2></div>)}</div><button style={s.secondary} onClick={()=>{loadOrders();loadProducts();}}>REFRESH DASHBOARD</button></section>}
     {activeTab==='orders'&&<section style={s.card}><div style={s.sectionHead}><h2>Customer Orders ({orders.length})</h2><button type="button" style={s.secondary} onClick={loadOrders}>REFRESH</button></div>{orderMessage&&<p style={s.notice}>{orderMessage}</p>}<label>Filter Orders</label><select style={s.input} value={orderFilter} onChange={e=>setOrderFilter(e.target.value)}>{['All',...ORDER_STATUSES].map(v=><option key={v}>{v}</option>)}</select>
       {filteredOrders.length===0&&<p>No orders found for this filter.</p>}
-      {filteredOrders.map(o=><article key={o.id} style={s.order}><div style={s.sectionHead}><div><b>Order: {o.order_number||o.id}</b><p>{o.customer_email||'No customer email'} · {o.country||'Country not set'} · {new Date(o.created_at).toLocaleString()}</p></div><strong>{money(o.total,o.currency||'USD')}</strong></div><p><b>Delivery:</b> {addressText(o.shipping_address)}</p><div style={s.stats}><div><small>Subtotal</small><b>{money(o.subtotal,o.currency)}</b></div><div><small>Shipping</small><b>{money(o.shipping,o.currency)}</b></div><div><small>Tax / Duty</small><b>{money(o.tax,o.currency)}</b></div></div><h4>Products</h4>{itemsFor(o.id).length?itemsFor(o.id).map((it,idx)=><div key={it.id||idx} style={s.orderItem}><span>{it.product_name||it.product_id||'Product'}{it.variant_size||it.variant_color?` — ${[it.variant_size,it.variant_color].filter(Boolean).join(' / ')}`:''} · Qty {it.quantity}</span><b>{money(Number(it.unit_price||0)*Number(it.quantity||0),o.currency)}</b></div>):<p>No order items found.</p>}<div style={s.statusRow}><label>Order Status</label><select style={{...s.input,maxWidth:'240px',margin:0}} value={o.status||'Pending'} disabled={updatingOrder===o.id} onChange={e=>updateOrderStatus(o.id,e.target.value)}>{ORDER_STATUSES.map(v=><option key={v}>{v}</option>)}</select><button type="button" style={s.button} disabled={updatingOrder===o.id || o.status==='Confirmed'} onClick={()=>updateOrderStatus(o.id,'Confirmed')}>CONFIRM ORDER</button><button type="button" style={s.delete} disabled={updatingOrder===o.id || o.status==='Cancelled'} onClick={()=>{if(window.confirm('Cancel this customer order?'))updateOrderStatus(o.id,'Cancelled');}}>CANCEL ORDER</button>{updatingOrder===o.id&&<small>Updating…</small>}</div>
+      {filteredOrders.map(o=><article key={o.id} style={s.order}><div style={s.sectionHead}><div><b>Order: {o.order_number||o.id}</b><p>{o.customer_email||'No customer email'} · {o.country||'Country not set'} · {new Date(o.created_at).toLocaleString()}</p></div><div style={{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}}><strong style={{fontSize:'18px',color:'#123b75'}}>{money(o.total,o.currency||'USD')}</strong><button type="button" style={s.delete} onClick={()=>deleteOrder(o)}>DELETE ORDER</button></div></div><p><b>Delivery:</b> {addressText(o.shipping_address)}</p><div style={s.stats}><div><small>Subtotal</small><b>{money(o.subtotal,o.currency)}</b></div><div><small>Shipping</small><b>{money(o.shipping,o.currency)}</b></div><div><small>Tax / Duty</small><b>{money(o.tax,o.currency)}</b></div></div><h4>Products</h4>{itemsFor(o.id).length?itemsFor(o.id).map((it,idx)=><div key={it.id||idx} style={s.orderItem}><span>{it.product_name||it.product_id||'Product'}{it.variant_size||it.variant_color?` — ${[it.variant_size,it.variant_color].filter(Boolean).join(' / ')}`:''} · Qty {it.quantity}</span><b>{money(Number(it.unit_price||0)*Number(it.quantity||0),o.currency)}</b></div>):<p>No order items found.</p>}<div style={s.statusRow}><label>Order Status</label><select style={{...s.input,maxWidth:'240px',margin:0}} value={o.status||'Pending'} disabled={updatingOrder===o.id} onChange={e=>updateOrderStatus(o.id,e.target.value)}>{ORDER_STATUSES.map(v=><option key={v}>{v}</option>)}</select><button type="button" style={s.button} disabled={updatingOrder===o.id || o.status==='Confirmed'} onClick={()=>updateOrderStatus(o.id,'Confirmed')}>CONFIRM ORDER</button><button type="button" style={s.delete} disabled={updatingOrder===o.id || o.status==='Cancelled'} onClick={()=>{if(window.confirm('Cancel this customer order?'))updateOrderStatus(o.id,'Cancelled');}}>CANCEL ORDER</button>{updatingOrder===o.id&&<small>Updating…</small>}</div>
         <div style={s.trackingBox}>
           <h4 style={{margin:'4px 0 12px',color:'#172554'}}>Shipment & Tracking Details</h4>
           <div style={s.trackingGrid}>
@@ -340,12 +358,12 @@ export default function Admin() {
 }
 
 const s={
-  page:{maxWidth:'1240px',margin:'24px auto',padding:'clamp(14px,3vw,30px)',fontFamily:'Inter, Arial, sans-serif',color:'#1e293b'},
-  header:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'12px',padding:'22px 24px',background:'linear-gradient(135deg,#fff 0%,#eef4ff 100%)',border:'1px solid #dbe5f3',borderRadius:'20px',boxShadow:'0 8px 26px rgba(15,23,42,.06)'},
-  nav:{display:'flex',gap:'10px',flexWrap:'wrap',margin:'18px 0',padding:'10px',background:'#e9eef7',borderRadius:'16px'},
+  page:{maxWidth:'1320px',margin:'24px auto',padding:'clamp(14px,3vw,30px)',fontFamily:'Inter, Arial, sans-serif',color:'#172033',background:'#f5f7fb',minHeight:'100vh',boxSizing:'border-box'},
+  header:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'12px',padding:'clamp(18px,3vw,28px)',background:'linear-gradient(125deg,#102b52 0%,#174a8b 58%,#d9a441 160%)',color:'#fff',border:'1px solid #173e70',borderRadius:'20px',boxShadow:'0 12px 30px rgba(15,23,42,.12)'},
+  nav:{display:'flex',gap:'8px',flexWrap:'wrap',margin:'18px 0',padding:'10px',background:'#e8edf5',border:'1px solid #d9e1ed',borderRadius:'16px'},
   tab:{background:'transparent',color:'#334155',padding:'12px 18px',border:0,borderRadius:'12px',cursor:'pointer',fontWeight:700},
   activeTab:{background:'#123b75',color:'#fff',padding:'12px 18px',border:0,borderRadius:'12px',cursor:'pointer',fontWeight:700,boxShadow:'0 5px 14px rgba(18,59,117,.22)'},
-  card:{background:'#fff',padding:'clamp(17px,2.5vw,28px)',margin:'20px 0',border:'1px solid #e2e8f0',borderRadius:'18px',boxShadow:'0 8px 24px rgba(15,23,42,.045)'},
+  card:{background:'#fff',padding:'clamp(17px,2.5vw,28px)',margin:'20px 0',border:'1px solid #e1e7f0',borderRadius:'18px',boxShadow:'0 10px 28px rgba(15,23,42,.055)'},
   input:{display:'block',width:'100%',boxSizing:'border-box',padding:'13px 14px',margin:'7px 0 15px',border:'1px solid #cbd5e1',borderRadius:'10px',background:'#fbfdff',color:'#0f172a',outlineColor:'#2563eb'},
   button:{background:'#174a8b',color:'#fff',padding:'12px 20px',border:0,borderRadius:'11px',cursor:'pointer',margin:'5px',fontWeight:700},
   secondary:{background:'#edf2f8',color:'#1e3a5f',padding:'10px 15px',border:0,borderRadius:'10px',cursor:'pointer',margin:'5px',fontWeight:700},
@@ -358,8 +376,8 @@ const s={
   imageTile:{border:'1px solid #ddd',borderRadius:'8px',padding:'7px',display:'flex',flexDirection:'column',gap:'4px'},
   sectionHead:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px',flexWrap:'wrap'},
   stats:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:'12px',margin:'14px 0'},
-  stat:{background:'#f7f7f7',padding:'14px',borderRadius:'8px'},
-  order:{border:'1px solid #dbe4f0',borderRadius:'16px',padding:'clamp(14px,2vw,22px)',margin:'16px 0',background:'linear-gradient(180deg,#fff,#fbfdff)'},
+  stat:{background:'linear-gradient(145deg,#f8fafc,#eef3fa)',padding:'16px',border:'1px solid #e5ebf4',borderRadius:'13px'},
+  order:{border:'1px solid #dbe4f0',borderRadius:'16px',padding:'clamp(14px,2vw,22px)',margin:'16px 0',background:'#fff',boxShadow:'0 5px 16px rgba(15,23,42,.035)'},
   orderItem:{display:'flex',justifyContent:'space-between',gap:'12px',padding:'8px 0',borderBottom:'1px solid #eee',flexWrap:'wrap'},
   statusRow:{display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap',marginTop:'12px'},
   notice: {
