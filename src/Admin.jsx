@@ -177,14 +177,17 @@ export default function Admin() {
         try{
           const safeName=file.name.replace(/[^a-zA-Z0-9.-]/g,'-');
           const storagePath=`indian-handicrafts/${row.sku}-${safeName}`;
-          const {error:uploadError}=await supabase.storage.from('product-images').upload(storagePath,file,{contentType:file.type||'image/png',upsert:true});
-          if(uploadError) throw uploadError;
+          let uploadResult=await supabase.storage.from('product-images').upload(storagePath,file,{contentType:file.type||'image/png',upsert:false});
+          if(uploadResult.error){
+            const duplicate = String(uploadResult.error.statusCode||'')==='409' || String(uploadResult.error.error||'').toLowerCase().includes('duplicate') || String(uploadResult.error.message||'').toLowerCase().includes('already exists');
+            if(!duplicate) throw new Error('Image upload failed: '+uploadResult.error.message);
+          }
           const {data:publicData}=supabase.storage.from('product-images').getPublicUrl(storagePath);
           const imageUrl=publicData?.publicUrl;
           if(!imageUrl) throw new Error('Could not create public image URL.');
           const record={name:row.name,sku:row.sku,slug:makeSlug(row.name,row.sku),category:'Indian Handicrafts',subcategory:row.subcategory||null,description:null,price:0,base_currency:'USD',stock:0,material:'Wood',origin:'India',image:imageUrl,images:[imageUrl],active:true,rating:null,reviews:0};
           const {error:insertError}=await supabase.from('products').insert(record);
-          if(insertError) throw insertError;
+          if(insertError) throw new Error('Product database insert failed: '+insertError.message);
           added++;
         }catch(itemError){failed++;const reason=String(itemError?.message||itemError||'Unknown error');if(!window.__gmxHandicraftFirstError){window.__gmxHandicraftFirstError=reason;setMessage('Import error for '+row.sku+': '+reason);} }
         setBulkProgress(`Processing ${i+1}/148 · ${added} added · ${skipped} already present · ${failed} failed`);
