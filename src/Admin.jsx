@@ -186,11 +186,11 @@ export default function Admin() {
           const {error:insertError}=await supabase.from('products').insert(record);
           if(insertError) throw insertError;
           added++;
-        }catch(itemError){failed++;}
+        }catch(itemError){failed++;const reason=String(itemError?.message||itemError||'Unknown error');if(!window.__gmxHandicraftFirstError){window.__gmxHandicraftFirstError=reason;setMessage('Import error for '+row.sku+': '+reason);} }
         setBulkProgress(`Processing ${i+1}/148 · ${added} added · ${skipped} already present · ${failed} failed`);
       }
       await loadProducts();
-      setMessage(`Import finished: ${added} added, ${skipped} already present, ${failed} failed. Check failed items before retrying.`);
+      setMessage(`Import finished: ${added} added, ${skipped} already present, ${failed} failed.`+(window.__gmxHandicraftFirstError?` First error: ${window.__gmxHandicraftFirstError}`:''));window.__gmxHandicraftFirstError=null;
       setBulkProgress(`Finished: ${added} added · ${skipped} skipped · ${failed} failed`);
     }catch(err){setMessage('Import stopped: '+(err.message||'Unknown error'));}
     finally{setBulkBusy(false);}
