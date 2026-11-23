@@ -20,7 +20,7 @@ const COLLECTIONS=[
  {name:'Modern Western & Streetwear',description:"Heavy-grain Men's Leather Jackets, Winter Coats, Sweaters, Heavyweight Hoodies, and all-season Tracksuits and Pajamas."},
  {name:'Cultural & Multireligious Lines',description:'Japanese Fusion Kurtas, premium embroidered Punjabi Juttis, tailored Abayas, Hijabs, plush Velvet Prayer Mats and traditional Topis.'},
  {name:'Aromatics & Lifestyle Fragrances',description:'Non-alcoholic Attars and Perfumes, natural hand-rolled Agarbatti sticks and brass holders.'},
- {name:'INDIAN HANDICRAFTS',description:'Discover handcrafted Indian decor, artisan-made utility pieces, traditional craftwork and distinctive handmade gifts.'}
+ {name:'Indian Handicrafts',description:'Discover handcrafted Indian decor, artisan-made utility pieces, traditional craftwork and distinctive handmade gifts.'}
 ];
 const cats=['All Collections',...COLLECTIONS.map(c=>c.name)];
 const CATEGORY_THUMBNAILS={
@@ -30,7 +30,7 @@ const CATEGORY_THUMBNAILS={
  'Modern Western & Streetwear':'/category-thumbnails/04_Modern_Western_Streetwear.jpg',
  'Cultural & Multireligious Lines':'/category-thumbnails/05_Cultural_Multireligious_Lines.jpg',
  'Aromatics & Lifestyle Fragrances':'/category-thumbnails/06_Aromatics_Lifestyle_Fragrances.jpg',
- 'INDIAN HANDICRAFTS':'/category-thumbnails/07_Indian_Handicrafts.jpg'
+ 'Indian Handicrafts':'/category-thumbnails/07_Indian_Handicrafts.jpg'
 };
 const westernTerms=/leather jacket|winter coat|coat|sweater|hoodie|tracksuit|track suit|pajama|streetwear/i;
 function collectionForProduct(p){
@@ -40,7 +40,7 @@ function collectionForProduct(p){
  const raw=stored.toLowerCase();
  const words=`${p.name||''} ${p.subcategory||''} ${p.description||''}`.toLowerCase();
  const combined=raw+' '+words;
- if(/indian handicrafts|handicraft|handcrafted|handmade craft|artisan craft/.test(combined))return 'INDIAN HANDICRAFTS';
+ if(/indian handicrafts|handicraft|handcrafted|handmade craft|artisan craft/.test(combined))return 'Indian Handicrafts';
  if(/jewell|jhumka|necklace|earring|bracelet|pendant/.test(combined))return 'Fine Jewelry Collection';
  if(/perfume|attar|fragrance|agarbatti|incense|brass holder/.test(combined))return 'Aromatics & Lifestyle Fragrances';
  if(/puja|spiritual|rudraksha|tulsi|shankh|conch|dhoti|chanting|altar|om mala/.test(combined))return 'Spiritual & Puja Essentials';
