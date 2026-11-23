@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from './supabase';
 
-const categories = ['Luxury Premium Apparels & Layering','Fine Jewelry Collection','Spiritual & Puja Essentials','Modern Western & Streetwear','Cultural & Multireligious Lines','Aromatics & Lifestyle Fragrances','INDIAN HANDICRAFTS'];
+const categories = ['Luxury Premium Apparels & Layering','Fine Jewelry Collection','Spiritual & Puja Essentials','Modern Western & Streetwear','Cultural & Multireligious Lines','Aromatics & Lifestyle Fragrances','Indian Handicrafts'];
 const clothingCategories = ['Luxury Premium Apparels & Layering','Modern Western & Streetwear','Cultural & Multireligious Lines'];
 const westernTerms=/leather jacket|winter coat|coat|sweater|hoodie|tracksuit|track suit|pajama|streetwear/i;
 function needsVariants(p){const text=`${p.name||''} ${p.subcategory||''}`;return p.category==='Luxury Premium Apparels & Layering'||p.category==='Modern Western & Streetwear'||(p.category==='Cultural & Multireligious Lines'&&/kurta|abaya|hijab|jutti|topi|apparel|clothing/i.test(text));}
@@ -12,7 +12,7 @@ function collectionForProduct(p){
  const raw=stored.toLowerCase();
  const words=`${p.name||''} ${p.subcategory||''} ${p.description||''}`.toLowerCase();
  const combined=raw+' '+words;
- if(/indian handicrafts|handicraft|handcrafted|handmade craft|artisan craft/.test(combined))return 'INDIAN HANDICRAFTS';
+ if(/indian handicrafts|handicraft|handcrafted|handmade craft|artisan craft/.test(combined))return 'Indian Handicrafts';
  if(/jewell|jhumka|necklace|earring|bracelet|pendant/.test(combined))return 'Fine Jewelry Collection';
  if(/perfume|attar|fragrance|agarbatti|incense|brass holder/.test(combined))return 'Aromatics & Lifestyle Fragrances';
  if(/puja|spiritual|rudraksha|tulsi|shankh|conch|dhoti|chanting|altar|om mala/.test(combined))return 'Spiritual & Puja Essentials';
@@ -283,7 +283,7 @@ export default function Admin() {
   if(!authorized)return <main style={s.page}><section style={s.card}><h1>GMX FASHION INDIA</h1><h2>Admin Login</h2><form onSubmit={login}><input name="email" type="email" placeholder="Admin email" required style={s.input}/><input name="password" type="password" placeholder="Password" required style={s.input}/><button style={s.button}>LOGIN</button></form>{message&&<p>{message}</p>}</section></main>;
 
   return <main style={s.page}>
-    <header style={s.header}><h1 className="gmx-admin-title" style={{fontSize:"clamp(28px,4vw,42px)",fontWeight:800}}>GMX FASHION INDIA <span style={{color:"#64748b",fontWeight:500}}> / ADMIN</span></h1><button type="button" onClick={logout} style={s.secondary}>LOGOUT</button></header>
+    <header style={s.header}><h1 className="gmx-admin-title" style={{fontSize:"clamp(26px,3.5vw,38px)",fontWeight:800,letterSpacing:".2px",margin:0}}>GMX FASHION INDIA <span style={{color:"#cbd5e1",fontWeight:500}}>/ ADMIN</span></h1></header>
     <nav className="gmx-admin-nav" style={s.nav}>{[['dashboard','DASHBOARD'],['orders','ORDERS'],['shipping','SHIPPING'],['customers','CUSTOMERS'],['products','PRODUCTS']].map(([id,label])=><button key={id} type="button" onClick={()=>setActiveTab(id)} style={activeTab===id?s.activeTab:s.tab}>{label}</button>)}</nav>
     {message&&<p style={s.notice}>{message}</p>}
     {activeTab==='dashboard'&&<section style={s.card}><h2>Dashboard Overview</h2><div style={s.stats}>{[['Total Orders',stats.orders],['Pending Orders',stats.pending],['Customers',stats.customers],['Products',stats.products],['Order Value',money(stats.sales,'USD')]].map(([label,value])=><div key={label} style={s.stat}><small>{label}</small><h2>{value}</h2></div>)}</div><button style={s.secondary} onClick={()=>{loadOrders();loadProducts();}}>REFRESH DASHBOARD</button></section>}
@@ -354,16 +354,17 @@ export default function Admin() {
       {selectedProduct&&<section style={s.card}><h2>Size & Colour — {selectedProduct.name}</h2><button type="button" style={s.secondary} onClick={closeVariants}>CLOSE</button><form onSubmit={saveVariant}><label>Size (S, M, L, XL, XXL)</label><input style={s.input} value={variantForm.size} onChange={e=>setVariantForm({...variantForm,size:e.target.value})} required/><label>Colour</label><input style={s.input} placeholder="Black, White, Blue..." value={variantForm.color} onChange={e=>setVariantForm({...variantForm,color:e.target.value})} required/><label>Variant SKU</label><input style={s.input} value={variantForm.sku} onChange={e=>setVariantForm({...variantForm,sku:e.target.value})}/><label>Variant Stock</label><input style={s.input} type="number" min="0" value={variantForm.stock} onChange={e=>setVariantForm({...variantForm,stock:e.target.value})}/><label>Variant image (optional)</label><input style={s.input} type="file" accept="image/*" onChange={e=>setVariantPhoto(e.target.files?.[0]||null)}/><input style={s.input} type="url" placeholder="Or paste an image URL" value={variantForm.image_url} onChange={e=>setVariantForm({...variantForm,image_url:e.target.value})}/><button disabled={variantSaving} style={s.button} type="submit">{variantSaving?'SAVING...':'SAVE VARIANT'}</button></form>{variantMessage&&<p>{variantMessage}</p>}<h3>Saved Variants ({variants.length})</h3>{variants.length===0&&<p>No variants added yet.</p>}{variants.map(v=><article key={v.id} style={s.product}>{v.image_url&&<img src={v.image_url} alt={`${v.color} ${v.size}`} style={s.image}/>}<div style={{flex:1}}><b>Size: {v.size} | Colour: {v.color}</b><p>SKU: {v.sku||'Not set'} · Stock: {v.stock}</p><small>{v.active?'Active':'Hidden'}</small></div><button type="button" style={s.delete} onClick={()=>deleteVariant(v.id)}>DELETE</button></article>)}</section>}
       <section style={s.card}><h2>Manage Products ({products.length})</h2><button type="button" style={s.secondary} onClick={loadProducts}>REFRESH</button>{products.map(p=><article key={p.id} style={s.product}>{(p.image||p.images?.[0])&&<img src={p.image||p.images[0]} alt={p.name} style={s.image}/>}<div style={{flex:1}}><b>{p.name}</b><p>{p.category} · ${p.price}</p><small>{p.active?'Active on website':'Archived / Hidden'} · {(Array.isArray(p.images)?p.images.length:(p.image?1:0))} image(s)</small></div>{needsVariants(p)&&<button type="button" style={s.secondary} onClick={()=>openVariants(p)}>SIZE & COLOUR</button>}<button type="button" style={s.secondary} onClick={()=>editProduct(p)}>EDIT</button><button type="button" style={s.secondary} onClick={()=>toggleProductArchive(p)}>{p.active===false?'RESTORE':'ARCHIVE / HIDE'}</button><button type="button" style={s.delete} onClick={()=>deleteProduct(p.id)}>DELETE</button></article>)}</section>
     </>}
+    <footer style={s.footer}><span>GMX FASHION INDIA · ADMIN CONSOLE</span><button type="button" onClick={logout} style={s.footerLogout}>LOG OUT</button></footer>
   </main>;
 }
 
 const s={
-  page:{maxWidth:'1320px',margin:'24px auto',padding:'clamp(14px,3vw,30px)',fontFamily:'Inter, Arial, sans-serif',color:'#172033',background:'#f5f7fb',minHeight:'100vh',boxSizing:'border-box'},
-  header:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'12px',padding:'clamp(18px,3vw,28px)',background:'linear-gradient(125deg,#102b52 0%,#174a8b 58%,#d9a441 160%)',color:'#fff',border:'1px solid #173e70',borderRadius:'20px',boxShadow:'0 12px 30px rgba(15,23,42,.12)'},
-  nav:{display:'flex',gap:'8px',flexWrap:'wrap',margin:'18px 0',padding:'10px',background:'#e8edf5',border:'1px solid #d9e1ed',borderRadius:'16px'},
-  tab:{background:'transparent',color:'#334155',padding:'12px 18px',border:0,borderRadius:'12px',cursor:'pointer',fontWeight:700},
-  activeTab:{background:'#123b75',color:'#fff',padding:'12px 18px',border:0,borderRadius:'12px',cursor:'pointer',fontWeight:700,boxShadow:'0 5px 14px rgba(18,59,117,.22)'},
-  card:{background:'#fff',padding:'clamp(17px,2.5vw,28px)',margin:'20px 0',border:'1px solid #e1e7f0',borderRadius:'18px',boxShadow:'0 10px 28px rgba(15,23,42,.055)'},
+  page:{maxWidth:'1320px',margin:'12px auto',padding:'clamp(12px,2.2vw,24px)',fontFamily:'Inter, Arial, sans-serif',color:'#172033',background:'#f5f7fb',minHeight:'100vh',boxSizing:'border-box',transition:'all .2s ease'},
+  header:{display:'flex',justifyContent:'flex-start',alignItems:'center',flexWrap:'wrap',gap:'12px',padding:'clamp(14px,2.2vw,22px) clamp(16px,2.5vw,26px)',background:'linear-gradient(125deg,#102b52 0%,#174a8b 58%,#d9a441 160%)',color:'#fff',border:'1px solid #173e70',borderRadius:'20px',boxShadow:'0 12px 30px rgba(15,23,42,.12)'},
+  nav:{display:'flex',gap:'8px',flexWrap:'wrap',margin:'12px 0',padding:'8px',background:'#e8edf5',border:'1px solid #d9e1ed',borderRadius:'16px'},
+  tab:{background:'transparent',color:'#334155',padding:'10px 15px',border:0,borderRadius:'10px',cursor:'pointer',fontWeight:700,transition:'background .18s ease,color .18s ease'},
+  activeTab:{background:'#123b75',color:'#fff',padding:'10px 15px',border:0,borderRadius:'10px',cursor:'pointer',fontWeight:700,boxShadow:'0 4px 12px rgba(18,59,117,.18)',transition:'background .18s ease,color .18s ease'},
+  card:{background:'#fff',padding:'clamp(16px,2.2vw,25px)',margin:'14px 0',border:'1px solid #e1e7f0',borderRadius:'16px',boxShadow:'0 8px 22px rgba(15,23,42,.045)',transition:'box-shadow .2s ease, transform .2s ease'},
   input:{display:'block',width:'100%',boxSizing:'border-box',padding:'13px 14px',margin:'7px 0 15px',border:'1px solid #cbd5e1',borderRadius:'10px',background:'#fbfdff',color:'#0f172a',outlineColor:'#2563eb'},
   button:{background:'#174a8b',color:'#fff',padding:'12px 20px',border:0,borderRadius:'11px',cursor:'pointer',margin:'5px',fontWeight:700},
   secondary:{background:'#edf2f8',color:'#1e3a5f',padding:'10px 15px',border:0,borderRadius:'10px',cursor:'pointer',margin:'5px',fontWeight:700},
