@@ -70,27 +70,8 @@ function makeSlug(name, sku) {
   return suffix ? `${base}-${suffix}` : `${base}-${Date.now().toString(36)}`;
 }
 
-function parseCsvLine(line) {
-  const out=[]; let value='', quoted=false;
-  for(let i=0;i<line.length;i++){
-    const ch=line[i];
-    if(ch==='"' && quoted && line[i+1]==='"'){value+='"';i++;}
-    else if(ch==='"'){quoted=!quoted;}
-    else if(ch===',' && !quoted){out.push(value);value='';}
-    else value+=ch;
-  }
-  out.push(value); return out;
-}
-function parseProductCsv(text) {
-  const lines=text.replace(/^\uFEFF/,'').split(/\r?\n/).filter(line=>line.trim());
-  if(lines.length<2) throw new Error('CSV file is empty or incomplete.');
-  const headers=parseCsvLine(lines[0]).map(h=>h.trim());
-  return lines.slice(1).map(line=>{const cells=parseCsvLine(line);const row={};headers.forEach((h,i)=>row[h]=(cells[i]||'').trim());return row;});
-}
-
 export default function Admin() {
   const [loading,setLoading]=useState(true), [authorized,setAuthorized]=useState(false), [activeTab,setActiveTab]=useState('products');
-  const [bulkCsv,setBulkCsv]=useState(null), [bulkImages,setBulkImages]=useState([]), [bulkBusy,setBulkBusy]=useState(false), [bulkProgress,setBulkProgress]=useState('');
   const [products,setProducts]=useState([]), [orders,setOrders]=useState([]), [orderItems,setOrderItems]=useState([]), [message,setMessage]=useState('');
   const [form,setForm]=useState(blank), [photos,setPhotos]=useState([]), [saving,setSaving]=useState(false);
   const [selectedProduct,setSelectedProduct]=useState(null), [variants,setVariants]=useState([]), [variantForm,setVariantForm]=useState(blankVariant), [variantPhoto,setVariantPhoto]=useState(null), [variantSaving,setVariantSaving]=useState(false), [variantMessage,setVariantMessage]=useState('');
@@ -152,51 +133,6 @@ export default function Admin() {
       if(result.error)throw result.error;
       setMessage('Product saved successfully.');setForm({...blank});setPhotos([]);await loadProducts();
     }catch(err){setMessage('Save failed: '+(err.message||'Unknown error'));}finally{setSaving(false);}
-  }
-  async function importHandicrafts(e){
-    e.preventDefault();
-    if(!bulkCsv){setMessage('Please select the product CSV file.');return;}
-    if(!bulkImages.length){setMessage('Please select the extracted product_images folder.');return;}
-    setBulkBusy(true);setBulkProgress('Reading import files...');
-    let added=0, skipped=0, failed=0;
-    try{
-      const rows=parseProductCsv(await bulkCsv.text());
-      if(rows.length!==148) throw new Error(`Expected 148 products, found ${rows.length}. Import cancelled.`);
-      const imageMap=new Map(bulkImages.map(file=>[file.name,file]));
-      const requiredSkus=rows.map(r=>r.sku);
-      if(new Set(requiredSkus).size!==148 || rows.some(r=>!/^GMX-IH-\d{2,3}$/.test(r.sku))) throw new Error('SKU list is invalid or contains duplicates.');
-      const {data:existingRows,error:existingError}=await supabase.from('products').select('sku').in('sku',requiredSkus);
-      if(existingError) throw existingError;
-      const existingSkus=new Set((existingRows||[]).map(r=>r.sku));
-      for(let i=0;i<rows.length;i++){
-        const row=rows[i];
-        if(existingSkus.has(row.sku)){skipped++;setBulkProgress(`Checking ${i+1}/148 · ${added} added · ${skipped} already present`);continue;}
-        const imageName=(row.image||'').split('/').pop();
-        const file=imageMap.get(imageName);
-        if(!file){failed++;setBulkProgress(`Image missing for ${row.sku} (${imageName}); continuing...`);continue;}
-        try{
-          const safeName=file.name.replace(/[^a-zA-Z0-9.-]/g,'-');
-          const storagePath=`indian-handicrafts/${row.sku}-${safeName}`;
-          let uploadResult=await supabase.storage.from('product-images').upload(storagePath,file,{contentType:file.type||'image/png',upsert:false});
-          if(uploadResult.error){
-            const duplicate = String(uploadResult.error.statusCode||'')==='409' || String(uploadResult.error.error||'').toLowerCase().includes('duplicate') || String(uploadResult.error.message||'').toLowerCase().includes('already exists');
-            if(!duplicate) throw new Error('Image upload failed: '+uploadResult.error.message);
-          }
-          const {data:publicData}=supabase.storage.from('product-images').getPublicUrl(storagePath);
-          const imageUrl=publicData?.publicUrl;
-          if(!imageUrl) throw new Error('Could not create public image URL.');
-          const record={name:row.name,sku:row.sku,slug:makeSlug(row.name,row.sku),category:'Indian Handicrafts',subcategory:row.subcategory||null,description:null,price:0,base_currency:'USD',stock:0,material:'Wood',origin:'India',image:imageUrl,images:[imageUrl],active:true,rating:null,reviews:0};
-          const {error:insertError}=await supabase.from('products').insert(record);
-          if(insertError) throw new Error('Product database insert failed: '+insertError.message);
-          added++;
-        }catch(itemError){failed++;const reason=String(itemError?.message||itemError||'Unknown error');if(!window.__gmxHandicraftFirstError){window.__gmxHandicraftFirstError=reason;setMessage('Import error for '+row.sku+': '+reason);} }
-        setBulkProgress(`Processing ${i+1}/148 · ${added} added · ${skipped} already present · ${failed} failed`);
-      }
-      await loadProducts();
-      setMessage(`Import finished: ${added} added, ${skipped} already present, ${failed} failed.`+(window.__gmxHandicraftFirstError?` First error: ${window.__gmxHandicraftFirstError}`:''));window.__gmxHandicraftFirstError=null;
-      setBulkProgress(`Finished: ${added} added · ${skipped} skipped · ${failed} failed`);
-    }catch(err){setMessage('Import stopped: '+(err.message||'Unknown error'));}
-    finally{setBulkBusy(false);}
   }
 
   async function toggleProductArchive(product){
@@ -398,19 +334,6 @@ export default function Admin() {
     </>}
     {activeTab==='customers'&&<section style={s.card}><div style={s.sectionHead}><h2>Customers ({customers.length})</h2><button style={s.secondary} onClick={loadOrders}>REFRESH</button></div>{customers.length===0?<p>No customers with orders yet.</p>:customers.map((c,i)=><article key={`${c.email}-${i}`} style={s.product}><div style={{flex:1}}><b>{c.email}</b><p>{c.country} · {c.orders} order(s) · Last order: {c.lastOrder?new Date(c.lastOrder).toLocaleDateString():'—'}</p></div><b>{money(c.total,'USD')}</b></article>)}</section>}
     {activeTab==='products'&&<>
-      <section style={s.card}>
-        <h2>Bulk Import — Indian Handicrafts (148 Products)</h2>
-        <p>Select the CSV file and the extracted <b>product_images</b> folder from the import ZIP. Existing products with the same SKU will be skipped.</p>
-        <form onSubmit={importHandicrafts}>
-          <label>1. Product CSV file</label>
-          <input style={s.input} type="file" accept=".csv,text/csv" onChange={e=>setBulkCsv(e.target.files?.[0]||null)} disabled={bulkBusy}/>
-          <label>2. Product images folder</label>
-          <input style={s.input} type="file" accept="image/png,image/jpeg,image/webp" multiple webkitdirectory="" directory="" onChange={e=>setBulkImages(Array.from(e.target.files||[]).filter(f=>/^GMX-IH-\d+\.(png|jpe?g|webp)$/i.test(f.name)))} disabled={bulkBusy}/>
-          <small>{bulkImages.length} matching product images selected. 148 are required.</small>
-          {bulkProgress&&<p>{bulkProgress}</p>}
-          <button type="submit" style={s.button} disabled={bulkBusy||!bulkCsv||bulkImages.length!==148}>{bulkBusy?'IMPORTING...':'IMPORT 148 PRODUCTS'}</button>
-        </form>
-      </section>
       <section style={s.card}><h2>{form.id?'Edit Product':'Add New Product'}</h2><form onSubmit={saveProduct}>
         <label>Product name *</label><input style={s.input} value={form.name} onChange={e=>setForm({...form,name:e.target.value})} required/>
         <label>SKU</label><input style={s.input} value={form.sku} onChange={e=>setForm({...form,sku:e.target.value})}/>
