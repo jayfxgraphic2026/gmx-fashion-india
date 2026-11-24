@@ -70,6 +70,32 @@ function makeSlug(name, sku) {
   return suffix ? `${base}-${suffix}` : `${base}-${Date.now().toString(36)}`;
 }
 
+function parseCSVRows(text) {
+  const rows=[]; let row=[], cell='', quoted=false;
+  const input=String(text||'').replace(/^\uFEFF/,'');
+  for(let i=0;i<input.length;i++){
+    const ch=input[i], next=input[i+1];
+    if(ch==='"'&&quoted&&next==='"'){cell+='"';i++;}
+    else if(ch==='"'){quoted=!quoted;}
+    else if(ch===','&&!quoted){row.push(cell);cell='';}
+    else if((ch==='\n'||ch==='\r')&&!quoted){
+      if(ch==='\r'&&next==='\n')i++;
+      row.push(cell);cell='';
+      if(row.some(v=>String(v).trim()!==''))rows.push(row);
+      row=[];
+    } else cell+=ch;
+  }
+  row.push(cell);
+  if(row.some(v=>String(v).trim()!==''))rows.push(row);
+  if(rows.length<2)return [];
+  const headers=rows[0].map(h=>String(h).trim().toLowerCase());
+  return rows.slice(1).map(values=>Object.fromEntries(headers.map((h,i)=>[h,String(values[i]??'').trim()])));
+}
+function csvValue(row, ...names) {
+  for(const name of names){const value=row[String(name).toLowerCase()];if(value!==undefined&&value!=='')return value;}
+  return '';
+}
+
 export default function Admin() {
   const [loading,setLoading]=useState(true), [authorized,setAuthorized]=useState(false), [activeTab,setActiveTab]=useState('products');
   const [products,setProducts]=useState([]), [orders,setOrders]=useState([]), [orderItems,setOrderItems]=useState([]), [message,setMessage]=useState('');
@@ -78,6 +104,7 @@ export default function Admin() {
   const [selectedProduct,setSelectedProduct]=useState(null), [variants,setVariants]=useState([]), [variantForm,setVariantForm]=useState(blankVariant), [variantPhoto,setVariantPhoto]=useState(null), [variantSaving,setVariantSaving]=useState(false), [variantMessage,setVariantMessage]=useState('');
   const [orderFilter,setOrderFilter]=useState('All'), [updatingOrder,setUpdatingOrder]=useState(''), [orderMessage,setOrderMessage]=useState(''), [savingTracking,setSavingTracking]=useState('');
   const [shippingRates,setShippingRates]=useState([]), [shippingForm,setShippingForm]=useState({id:'',country_code:'',country_name:'',currency:'USD',shipping_charge:'0',free_shipping_minimum:'',duty_percent:'0',active:true}), [shippingMessage,setShippingMessage]=useState(''), [shippingSaving,setShippingSaving]=useState(false);
+  const [bulkCsvFile,setBulkCsvFile]=useState(null), [bulkImages,setBulkImages]=useState([]), [bulkRows,setBulkRows]=useState([]), [bulkBusy,setBulkBusy]=useState(false), [bulkProgress,setBulkProgress]=useState('');
 
   useEffect(()=>{ checkUser(); },[]);
   async function checkUser(){
@@ -271,6 +298,78 @@ export default function Admin() {
     else setOrderMessage('Tracking details saved successfully.');
     setSavingTracking('');
   }
+  async function prepareBulkCSV(file){
+    setBulkCsvFile(file||null);setBulkRows([]);setBulkProgress('');
+    if(!file)return;
+    try{
+      const parsed=parseCSVRows(await file.text());
+      if(!parsed.length)throw new Error('CSV is empty or its header row is missing.');
+      const mapped=parsed.map((r,index)=>{
+        const name=csvValue(r,'Product Name','name','title');
+        const sku=csvValue(r,'SKU','sku');
+        const rawCategory=csvValue(r,'Category','category');
+        const category=categories.find(c=>c.toLowerCase()===rawCategory.toLowerCase())||rawCategory||'Luxury Premium Apparels & Layering';
+        const imageFilename=csvValue(r,'Image Filename','image filename','image','filename','image_url');
+        const status=csvValue(r,'Status','status')||'Draft';
+        return {
+          rowNumber:index+2,name,sku,category,
+          subcategory:csvValue(r,'Subcategory','subcategory'),
+          description:csvValue(r,'Description','description'),
+          price:csvValue(r,'Price','price'),
+          stock:csvValue(r,'Stock Quantity','Stock','stock','quantity')||'0',
+          imageFilename:imageFilename.split(/[;,|]/)[0].trim(),
+          active:!/^draft|inactive|false|hidden$/i.test(status),
+          status
+        };
+      });
+      setBulkRows(mapped);
+      setBulkProgress(`CSV loaded: ${mapped.length} product row(s). Select the matching product images below.`);
+    }catch(err){setBulkProgress('CSV error: '+(err.message||String(err)));}
+  }
+  async function importBulkProducts(){
+    if(!bulkRows.length){setBulkProgress('Please select a valid CSV file first.');return;}
+    if(!bulkImages.length){setBulkProgress('Please select the extracted product image files.');return;}
+    const imageMap=new Map(bulkImages.map(file=>[file.name.toLowerCase(),file]));
+    const missing=bulkRows.filter(row=>!row.name||!row.imageFilename||!imageMap.has(row.imageFilename.toLowerCase()));
+    if(missing.length){
+      setBulkProgress(`${missing.length} row(s) need attention. Check product names and exact image filenames. First missing: ${missing.slice(0,5).map(r=>r.imageFilename||`CSV row ${r.rowNumber}`).join(', ')}`);
+      return;
+    }
+    const existingSkus=new Set(products.map(p=>String(p.sku||'').toLowerCase()).filter(Boolean));
+    const duplicateRows=bulkRows.filter(r=>r.sku&&existingSkus.has(r.sku.toLowerCase()));
+    if(duplicateRows.length&&!window.confirm(`${duplicateRows.length} SKU(s) already exist in the catalogue. Skip existing SKUs and import the remaining rows?`))return;
+    const toImport=bulkRows.filter(r=>!r.sku||!existingSkus.has(r.sku.toLowerCase()));
+    if(!toImport.length){setBulkProgress('All CSV SKUs already exist. Nothing was imported.');return;}
+    const blankPrices=toImport.filter(r=>r.price==='').length;
+    const drafts=toImport.filter(r=>!r.active).length;
+    const warning=`Ready to import ${toImport.length} product(s). ${blankPrices} have no price and will be saved at USD 0.00; ${drafts} Draft/hidden products will remain inactive. Continue?`;
+    if(!window.confirm(warning))return;
+    setBulkBusy(true);let done=0,failed=[];
+    try{
+      for(const row of toImport){
+        try{
+          const file=imageMap.get(row.imageFilename.toLowerCase());
+          const [imageUrl]=await uploadImages([file],`bulk-${row.sku||'product'}`);
+          const price=row.price===''?0:Number(row.price);
+          if(!Number.isFinite(price)||price<0)throw new Error('Invalid price in CSV');
+          const category=categories.includes(row.category)?row.category:collectionForProduct({name:row.name,category:row.category,subcategory:row.subcategory,description:row.description});
+          const record={
+            name:row.name,sku:row.sku||null,slug:makeSlug(row.name,row.sku),
+            category,subcategory:row.subcategory||null,description:row.description||null,
+            price,base_currency:'USD',stock:Math.max(0,Number(row.stock)||0),
+            material:null,origin:'India',image:imageUrl||null,images:imageUrl?[imageUrl]:[],
+            active:Boolean(row.active),rating:null,reviews:0
+          };
+          const {error}=await supabase.from('products').insert(record);
+          if(error)throw error;
+          done++;
+          setBulkProgress(`Importing products: ${done}/${toImport.length} completed…`);
+        }catch(err){failed.push(`Row ${row.rowNumber} (${row.name}): ${err.message||String(err)}`);}
+      }
+      await loadProducts();
+      setBulkProgress(`Import finished: ${done} added, ${failed.length} failed. ${failed.slice(0,8).join(' | ')}`);
+    }finally{setBulkBusy(false);}
+  }
   const filteredOrders=useMemo(()=>orderFilter==='All'?orders:orders.filter(o=>(o.status||'Pending').toLowerCase()===orderFilter.toLowerCase()),[orders,orderFilter]);
   const productCategoryCounts=useMemo(()=>categories.reduce((acc,category)=>{acc[category]=products.filter(p=>collectionForProduct(p)===category).length;return acc;},{}),[products]);
   const filteredProducts=useMemo(()=>{
@@ -345,6 +444,24 @@ export default function Admin() {
     </>}
     {activeTab==='customers'&&<section style={s.card}><div style={s.sectionHead}><h2>Customers ({customers.length})</h2><button style={s.secondary} onClick={loadOrders}>REFRESH</button></div>{customers.length===0?<p>No customers with orders yet.</p>:customers.map((c,i)=><article key={`${c.email}-${i}`} style={s.product}><div style={{flex:1}}><b>{c.email}</b><p>{c.country} · {c.orders} order(s) · Last order: {c.lastOrder?new Date(c.lastOrder).toLocaleDateString():'—'}</p></div><b>{money(c.total,'USD')}</b></article>)}</section>}
     {activeTab==='products'&&<>
+      <section style={s.card}>
+        <div style={s.sectionHead}><div><h2 style={{margin:'0 0 6px'}}>Bulk Product Import</h2><p style={{margin:0,color:'#64748b'}}>Import multiple products from a CSV and match each row to its image filename.</p></div><strong>{bulkRows.length} CSV row(s)</strong></div>
+        <label>1. Select product CSV file</label>
+        <input style={s.input} type="file" accept=".csv,text/csv" onChange={e=>prepareBulkCSV(e.target.files?.[0]||null)}/>
+        <label>2. Select all extracted product images</label>
+        <input style={s.input} type="file" accept="image/*" multiple onChange={e=>setBulkImages(Array.from(e.target.files||[]))}/>
+        <p style={{fontSize:'13px',color:'#64748b',marginTop:0}}>{bulkImages.length} image file(s) selected. First extract the ZIP on your device, then select all files inside its product_images folder.</p>
+        {bulkRows.length>0&&<div style={{overflowX:'auto',margin:'12px 0'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:'13px'}}>
+            <thead><tr>{['#','Product','Category','Image filename','Price','Status'].map(h=><th key={h} style={{textAlign:'left',padding:'8px',borderBottom:'1px solid #dbe3ef'}}>{h}</th>)}</tr></thead>
+            <tbody>{bulkRows.slice(0,8).map(row=><tr key={row.rowNumber}><td style={{padding:'8px',borderBottom:'1px solid #edf1f6'}}>{row.rowNumber-1}</td><td style={{padding:'8px',borderBottom:'1px solid #edf1f6'}}>{row.name||'Missing name'}</td><td style={{padding:'8px',borderBottom:'1px solid #edf1f6'}}>{row.category}</td><td style={{padding:'8px',borderBottom:'1px solid #edf1f6'}}>{row.imageFilename||'Missing image'}</td><td style={{padding:'8px',borderBottom:'1px solid #edf1f6'}}>{row.price||'0 (blank)'}</td><td style={{padding:'8px',borderBottom:'1px solid #edf1f6'}}>{row.status}</td></tr>)}</tbody>
+          </table>
+          {bulkRows.length>8&&<small>Showing first 8 of {bulkRows.length} rows.</small>}
+        </div>}
+        <p style={{fontSize:'13px',color:'#9a6700',background:'#fffbeb',padding:'10px 12px',borderRadius:'9px'}}>Important: blank prices in the supplied CSV will be imported as USD 0.00. Rows marked Draft will stay hidden/inactive. Add prices and activate products before selling.</p>
+        <button type="button" style={s.button} disabled={bulkBusy||!bulkRows.length||!bulkImages.length} onClick={importBulkProducts}>{bulkBusy?'IMPORTING…':'IMPORT PRODUCTS'}</button>
+        {bulkProgress&&<p style={s.notice}>{bulkProgress}</p>}
+      </section>
       <section style={s.card}><h2>{form.id?'Edit Product':'Add New Product'}</h2><form onSubmit={saveProduct}>
         <label>Product name *</label><input style={s.input} value={form.name} onChange={e=>setForm({...form,name:e.target.value})} required/>
         <label>SKU</label><input style={s.input} value={form.sku} onChange={e=>setForm({...form,sku:e.target.value})}/>
