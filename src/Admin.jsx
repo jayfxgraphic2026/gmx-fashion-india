@@ -73,6 +73,7 @@ function makeSlug(name, sku) {
 export default function Admin() {
   const [loading,setLoading]=useState(true), [authorized,setAuthorized]=useState(false), [activeTab,setActiveTab]=useState('products');
   const [products,setProducts]=useState([]), [orders,setOrders]=useState([]), [orderItems,setOrderItems]=useState([]), [message,setMessage]=useState('');
+  const [productCategoryFilter,setProductCategoryFilter]=useState('All Categories'), [productSearch,setProductSearch]=useState('');
   const [form,setForm]=useState(blank), [photos,setPhotos]=useState([]), [saving,setSaving]=useState(false);
   const [selectedProduct,setSelectedProduct]=useState(null), [variants,setVariants]=useState([]), [variantForm,setVariantForm]=useState(blankVariant), [variantPhoto,setVariantPhoto]=useState(null), [variantSaving,setVariantSaving]=useState(false), [variantMessage,setVariantMessage]=useState('');
   const [orderFilter,setOrderFilter]=useState('All'), [updatingOrder,setUpdatingOrder]=useState(''), [orderMessage,setOrderMessage]=useState(''), [savingTracking,setSavingTracking]=useState('');
@@ -271,6 +272,16 @@ export default function Admin() {
     setSavingTracking('');
   }
   const filteredOrders=useMemo(()=>orderFilter==='All'?orders:orders.filter(o=>(o.status||'Pending').toLowerCase()===orderFilter.toLowerCase()),[orders,orderFilter]);
+  const productCategoryCounts=useMemo(()=>categories.reduce((acc,category)=>{acc[category]=products.filter(p=>collectionForProduct(p)===category).length;return acc;},{}),[products]);
+  const filteredProducts=useMemo(()=>{
+    const q=productSearch.trim().toLowerCase();
+    return products.filter(p=>{
+      const category=collectionForProduct(p);
+      const matchesCategory=productCategoryFilter==='All Categories'||category===productCategoryFilter;
+      const matchesSearch=!q||[p.name,p.sku,p.subcategory,p.description].some(v=>String(v||'').toLowerCase().includes(q));
+      return matchesCategory&&matchesSearch;
+    });
+  },[products,productCategoryFilter,productSearch]);
   const customers=useMemo(()=>{
     const map=new Map();
     orders.forEach(o=>{const key=o.user_id||o.customer_email||o.id;const old=map.get(key)||{email:o.customer_email||'No email',orders:0,total:0,country:o.country||'—',lastOrder:o.created_at};old.orders++;old.total+=Number(o.total||0);if(!old.lastOrder||new Date(o.created_at)>new Date(old.lastOrder))old.lastOrder=o.created_at;map.set(key,old);});
@@ -353,7 +364,33 @@ export default function Admin() {
         <p><button disabled={saving} style={s.button}>{saving?'SAVING...':'SAVE PRODUCT'}</button><button type="button" style={s.secondary} onClick={()=>{setForm({...blank});setPhotos([]);setMessage('Form cleared.');}}>CLEAR FORM</button></p>
       </form></section>
       {selectedProduct&&<section style={s.card}><h2>Size & Colour — {selectedProduct.name}</h2><button type="button" style={s.secondary} onClick={closeVariants}>CLOSE</button><form onSubmit={saveVariant}><label>Size (S, M, L, XL, XXL)</label><input style={s.input} value={variantForm.size} onChange={e=>setVariantForm({...variantForm,size:e.target.value})} required/><label>Colour</label><input style={s.input} placeholder="Black, White, Blue..." value={variantForm.color} onChange={e=>setVariantForm({...variantForm,color:e.target.value})} required/><label>Variant SKU</label><input style={s.input} value={variantForm.sku} onChange={e=>setVariantForm({...variantForm,sku:e.target.value})}/><label>Variant Stock</label><input style={s.input} type="number" min="0" value={variantForm.stock} onChange={e=>setVariantForm({...variantForm,stock:e.target.value})}/><label>Variant image (optional)</label><input style={s.input} type="file" accept="image/*" onChange={e=>setVariantPhoto(e.target.files?.[0]||null)}/><input style={s.input} type="url" placeholder="Or paste an image URL" value={variantForm.image_url} onChange={e=>setVariantForm({...variantForm,image_url:e.target.value})}/><button disabled={variantSaving} style={s.button} type="submit">{variantSaving?'SAVING...':'SAVE VARIANT'}</button></form>{variantMessage&&<p>{variantMessage}</p>}<h3>Saved Variants ({variants.length})</h3>{variants.length===0&&<p>No variants added yet.</p>}{variants.map(v=><article key={v.id} style={s.product}>{v.image_url&&<img src={v.image_url} alt={`${v.color} ${v.size}`} style={s.image}/>}<div style={{flex:1}}><b>Size: {v.size} | Colour: {v.color}</b><p>SKU: {v.sku||'Not set'} · Stock: {v.stock}</p><small>{v.active?'Active':'Hidden'}</small></div><button type="button" style={s.delete} onClick={()=>deleteVariant(v.id)}>DELETE</button></article>)}</section>}
-      <section style={s.card}><h2>Manage Products ({products.length})</h2><button type="button" style={s.secondary} onClick={loadProducts}>REFRESH</button>{products.map(p=><article key={p.id} style={s.product}>{(p.image||p.images?.[0])&&<img src={p.image||p.images[0]} alt={p.name} style={s.image}/>}<div style={{flex:1}}><b>{p.name}</b><p>{p.category} · ${p.price}</p><small>{p.active?'Active on website':'Archived / Hidden'} · {(Array.isArray(p.images)?p.images.length:(p.image?1:0))} image(s)</small></div>{needsVariants(p)&&<button type="button" style={s.secondary} onClick={()=>openVariants(p)}>SIZE & COLOUR</button>}<button type="button" style={s.secondary} onClick={()=>editProduct(p)}>EDIT</button><button type="button" style={s.secondary} onClick={()=>toggleProductArchive(p)}>{p.active===false?'RESTORE':'ARCHIVE / HIDE'}</button><button type="button" style={s.delete} onClick={()=>deleteProduct(p.id)}>DELETE</button></article>)}</section>
+      <section style={s.card}>
+        <div style={s.sectionHead}>
+          <div><div style={{fontSize:'12px',fontWeight:800,letterSpacing:'1.5px',color:'#b18435'}}>CATALOGUE MANAGEMENT</div><h2 style={{margin:'5px 0'}}>Manage Products</h2><p style={{margin:'4px 0',color:'#64748b',fontSize:'13px'}}>Browse, filter and update products by collection.</p></div>
+          <button type="button" style={s.secondary} onClick={loadProducts}>↻ REFRESH PRODUCTS</button>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(145px,1fr))',gap:'10px',margin:'18px 0'}}>
+          <button type="button" onClick={()=>setProductCategoryFilter('All Categories')} style={{textAlign:'left',padding:'13px 14px',borderRadius:'12px',border:productCategoryFilter==='All Categories'?'2px solid #174a8b':'1px solid #dce4ef',background:productCategoryFilter==='All Categories'?'#eef4ff':'#fbfcfe',cursor:'pointer',color:'#172033'}}>
+            <small style={{display:'block',color:'#64748b',fontWeight:700}}>ALL COLLECTIONS</small><strong style={{fontSize:'22px'}}>{products.length}</strong><small style={{display:'block',color:'#64748b'}}>Products</small>
+          </button>
+          {categories.map(category=><button key={category} type="button" onClick={()=>setProductCategoryFilter(category)} style={{textAlign:'left',padding:'13px 14px',borderRadius:'12px',border:productCategoryFilter===category?'2px solid #174a8b':'1px solid #dce4ef',background:productCategoryFilter===category?'#eef4ff':'#fbfcfe',cursor:'pointer',color:'#172033',minWidth:0}}>
+            <small style={{display:'block',color:'#64748b',fontWeight:700,lineHeight:1.3,minHeight:'30px'}}>{category.toUpperCase()}</small><strong style={{fontSize:'22px'}}>{productCategoryCounts[category]||0}</strong><small style={{display:'block',color:'#64748b'}}>Products</small>
+          </button>)}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'minmax(0,2fr) minmax(180px,1fr)',gap:'12px',alignItems:'end',marginBottom:'12px'}}>
+          <label style={{fontSize:'12px',fontWeight:800,color:'#475569'}}>SEARCH PRODUCTS<input style={s.input} value={productSearch} onChange={e=>setProductSearch(e.target.value)} placeholder="Search by product name, SKU or subcategory..."/></label>
+          <label style={{fontSize:'12px',fontWeight:800,color:'#475569'}}>FILTER BY CATEGORY<select style={s.input} value={productCategoryFilter} onChange={e=>setProductCategoryFilter(e.target.value)}><option>All Categories</option>{categories.map(c=><option key={c}>{c}</option>)}</select></label>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',gap:'10px',flexWrap:'wrap',padding:'10px 12px',background:'#f5f8fc',borderRadius:'10px',color:'#475569',fontSize:'13px'}}>
+          <strong>{filteredProducts.length} product(s) shown</strong><span>{productCategoryFilter==='All Categories'?'All categories':productCategoryFilter}</span>
+          {(productCategoryFilter!=='All Categories'||productSearch)&&<button type="button" style={{...s.secondary,margin:0,padding:'6px 10px'}} onClick={()=>{setProductCategoryFilter('All Categories');setProductSearch('');}}>CLEAR FILTERS</button>}
+        </div>
+        {filteredProducts.length===0?<p style={{padding:'24px',textAlign:'center',color:'#64748b'}}>No products found. Try another category or search term.</p>:filteredProducts.map(p=><article key={p.id} style={{...s.product,padding:'15px 0',alignItems:'center'}}>
+          {(p.image||p.images?.[0])&&<img src={p.image||p.images[0]} alt={p.name} style={{...s.image,width:'76px',height:'76px',borderRadius:'10px'}}/>}
+          <div style={{flex:'1 1 220px',minWidth:0}}><b style={{display:'block',fontSize:'15px',color:'#14213d'}}>{p.name}</b><p style={{margin:'5px 0',fontSize:'13px',color:'#475569'}}>{collectionForProduct(p)} · {money(p.price,'USD')}</p><small style={{color:'#64748b'}}>SKU: {p.sku||'Not set'} · {p.active?'Active on website':'Archived / Hidden'} · {(Array.isArray(p.images)?p.images.length:(p.image?1:0))} image(s)</small></div>
+          <div style={{display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center'}}>{needsVariants(p)&&<button type="button" style={s.secondary} onClick={()=>openVariants(p)}>SIZE & COLOUR</button>}<button type="button" style={s.secondary} onClick={()=>editProduct(p)}>EDIT</button><button type="button" style={s.secondary} onClick={()=>toggleProductArchive(p)}>{p.active===false?'RESTORE':'ARCHIVE / HIDE'}</button><button type="button" style={s.delete} onClick={()=>deleteProduct(p.id)}>DELETE</button></div>
+        </article>)}
+      </section>
     </>}
     <footer style={s.footer}><span>GMX FASHION INDIA · ADMIN CONSOLE</span><button type="button" onClick={logout} style={s.footerLogout}>LOG OUT</button></footer>
   </main>;
