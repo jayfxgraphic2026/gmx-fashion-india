@@ -201,7 +201,6 @@ export default function App(){
   const address=authUser?addresses.find(a=>String(a.id)===String(selectedAddressId)):{label:'Guest',recipient_name:guestDetails.name,phone:guestDetails.phone,address_line1:guestDetails.address_line1,address_line2:guestDetails.address_line2,city:guestDetails.city,state:guestDetails.state,postal_code:guestDetails.postal_code,country:guestDetails.country};
   if(!address||!address.recipient_name||!address.phone||!address.address_line1||!address.city||!address.state||!address.postal_code||!address.country||(!authUser&&!guestDetails.email)){showNotice('Please complete all required delivery and contact details.');return;}
   if(items.some(p=>!Number.isFinite(Number(p.price))||Number(p.price)<=0)){showNotice('A product has no confirmed price. Please contact our team before ordering.');return;}
-  const paymentTab=window.open('about:blank','_blank');
   setOrderBusy(true);
   try{
    let orderUser=authUser;
@@ -225,12 +224,12 @@ export default function App(){
    const {error:itemsError}=await supabase.from('order_items').insert(orderLines);
    if(itemsError){await supabase.from('orders').delete().eq('id',createdOrder.id).eq('user_id',orderUser.id);throw itemsError;}
    const confirmed={...createdOrder,order_number:createdOrder.order_number||orderNumber,status:'Pending',total,currency:country,shipping_address:shippingAddress};
-   setLastPlacedOrder({...confirmed,payment_method:'mercadopago',payment_status:'Pending',payment_reference:null});setPaymentReference('');setItems([]);localStorage.gmxCart='';setPage('order-success');showNotice('Order saved. Complete payment in the Mercado Pago tab.');if(paymentTab)paymentTab.location.href='https://link.mercadopago.com.mx/gmxinduropa';
+   setLastPlacedOrder({...confirmed,payment_method:'mercadopago',payment_status:'Pending',payment_reference:null});setPaymentReference('');setItems([]);localStorage.gmxCart='';setPage('order-success');showNotice('Order saved. Tap OPEN MERCADO PAGO to continue your payment.');
    const {data:updatedOrders}=await supabase.from('orders').select('*').eq('user_id',orderUser.id).order('created_at',{ascending:false});
    if(updatedOrders)setOrderHistory(updatedOrders);
    const {data:updatedLines}=await supabase.from('order_items').select('*').eq('order_id',createdOrder.id);
    if(updatedLines)setOrderItemsById(prev=>({...prev,[createdOrder.id]:updatedLines}));
-  }catch(error){if(paymentTab)paymentTab.close();console.error('Order placement failed:',error);showNotice('Order could not be placed: '+(error?.message||'Please try again.'));}
+  }catch(error){console.error('Order placement failed:',error);showNotice('Order could not be placed: '+(error?.message||'Please try again.'));}
   finally{setOrderBusy(false);}
  }
  async function saveCustomerProfile(e){
@@ -401,7 +400,7 @@ export default function App(){
   <p>Thank you for shopping with GMX FASHION INDIA. Your order has been saved and is currently awaiting processing.</p>
   {lastPlacedOrder&&<div className="contact-card" style={{textAlign:'left',margin:'24px auto',maxWidth:'520px'}}><p><b>Order number:</b> {lastPlacedOrder.order_number}</p><p><b>Status:</b> Pending</p><p><b>Total:</b> {new Intl.NumberFormat(undefined,{style:'currency',currency:lastPlacedOrder.currency||country}).format(Number(lastPlacedOrder.total)||0)}</p></div>}
   <p className="muted">Your order has been saved. If Mercado Pago did not open, use the payment link below. Payment status will remain Pending until GMX verifies the payment.</p>
-  <a className="solid" href="https://link.mercadopago.com.mx/gmxinduropa" target="_blank" rel="noreferrer">OPEN MERCADO PAGO</a>
+  <a className="solid" href="https://link.mercadopago.com.mx/gmxinduropa" target="_self">OPEN MERCADO PAGO</a>
   <button className="solid" onClick={()=>setPage('account')}>VIEW MY ORDERS</button> <button className="outline" onClick={()=>{setPage('shop');setCat('All Collections')}}>CONTINUE SHOPPING</button>
  </section>}
  {page==='wholesale'&&<section className="section form-page"><label>GLOBAL SOURCING · WHOLESALE & EXPORT</label><h2>Become our international<br/><i>business partner.</i></h2><p>Partner with GMX FASHION INDIA to source authentic Indian fashion, spiritual products, traditional accessories and lifestyle collections for your market.</p><form onSubmit={e=>{e.preventDefault();setNotice('Thank you. Your enquiry has been prepared. Please send it to our team on WhatsApp.');}}><div className="form-grid">{['Full Name','Company Name','Country','Email','WhatsApp Number','Product Category','Required Quantity'].map((x,i)=><label>{x}<input required={i===0||i===3} placeholder={x}/></label>)}</div><label>Message<textarea placeholder="Tell us about the products and quantities you are interested in."/></label><button className="solid">SUBMIT ENQUIRY <ArrowRight/></button><a className="wa-inline" href={wa} target="_blank">OR CHAT WITH OUR TEAM ON WHATSAPP</a></form></section>}
