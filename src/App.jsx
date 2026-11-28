@@ -328,7 +328,19 @@ export default function App(){
 .shop-page .shop-layout>aside>button{font-family:Arial,'Segoe UI',sans-serif!important;font-size:14px!important;font-weight:600!important;line-height:1.35!important;letter-spacing:0!important;word-spacing:normal!important;text-transform:none!important;white-space:normal!important;padding:12px 14px!important;min-height:44px!important;box-sizing:border-box!important}
 .shop-page .shop-layout>aside>button.chosen{font-size:14px!important;font-weight:600!important}
 @media(min-width:760px){.category-grid{grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:24px 18px!important}.category-tile .gmx-category-name{min-height:76px!important;font-size:15px!important}}
-`}</style><div className="announce">AUTHENTIC INDIAN FINDS · INTERNATIONAL SHOPPING · WHOLESALE ENQUIRIES <span>✦</span> SHIPPING OPTIONS AT CHECKOUT</div>
+`}/* Address editor: larger, touch-friendly fields on phones and desktop. */
+.address-editor-form{width:100%;min-width:0;box-sizing:border-box}
+.address-editor-form>label,.address-editor-form .form-grid>label{display:flex;flex-direction:column;align-items:stretch;gap:7px;font-size:16px;font-weight:800;line-height:1.35;letter-spacing:.35px;color:#74133f;min-width:0}
+.address-editor-form input:not([type="checkbox"]),.address-editor-form select{display:block;width:100%;min-width:0;max-width:100%;height:56px;box-sizing:border-box;padding:13px 15px;margin-top:0;border:1px solid #d8d2d5;border-radius:10px;background:#fff;color:#24212a;font:500 17px/1.3 Arial,sans-serif}
+.address-editor-form select{cursor:pointer;appearance:auto;-webkit-appearance:menulist}
+.address-editor-form input:focus,.address-editor-form select:focus{outline:2px solid #e72d69;outline-offset:1px;border-color:#e72d69}
+@media(max-width:759px){
+.address-editor-form{gap:16px!important}
+.address-editor-form>label,.address-editor-form .form-grid>label{font-size:17px!important;gap:8px!important}
+.address-editor-form input:not([type="checkbox"]),.address-editor-form select{height:60px!important;font-size:18px!important;padding:14px 15px!important}
+.address-editor-form .form-grid{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:16px!important;width:100%!important}
+}
+</style><div className="announce">AUTHENTIC INDIAN FINDS · INTERNATIONAL SHOPPING · WHOLESALE ENQUIRIES <span>✦</span> SHIPPING OPTIONS AT CHECKOUT</div>
  <header><div className="head-top"><button className="hamb" aria-label="Open menu" onClick={()=>setMobile(true)} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',flex:'0 0 44px',width:44,height:44,cursor:'pointer'}}><Menu/></button><button className="brand" onClick={()=>{setPage('home');setCat('All Collections')}}><img className="brand-logo" src="/gmx-logo.jpg" alt="GMX FASHION INDIA logo"/></button><div className="search"><Search size={19}/><input value={search} onChange={e=>{setSearch(e.target.value);setPage('shop')}} placeholder="Search fashion, jewellery, spiritual essentials..."/><button onClick={()=>setPage('shop')}>SEARCH</button></div><div className="head-tools"><select value={country} onChange={e=>{setCountryManuallySelected(true);setCountry(e.target.value)}} aria-label="Currency">{countries.map(c=><option value={c[1]}>{c[0]} · {c[1]}</option>)}</select><select value={lang} onChange={e=>setLang(e.target.value)} aria-label="Language">{['English','Español','Français','Deutsch','Italiano','Português','Srpski','हिन्दी','العربية'].map(x=><option>{x}</option>)}</select><button onClick={()=>setPage('account')}><User/><span>Account</span></button><button onClick={()=>setPage('wishlist')}><Heart/><span>Wishlist</span><i>{wish.length}</i></button><button onClick={()=>setCartOpen(true)}><ShoppingBag/><span>Bag</span><i>{count}</i></button></div></div>
  </header>
  {mobile&&<div onClick={()=>setMobile(false)} style={{position:'fixed',inset:0,zIndex:10000,background:'rgba(13,18,28,.62)',backdropFilter:'blur(5px)',display:'flex',justifyContent:'flex-start'}}>
@@ -389,8 +401,8 @@ export default function App(){
       <p className="muted" style={{marginBottom:0}}>The payment link is managed by the merchant. The amount and order details may need to be entered or selected on Mercado Pago's page.</p>
      </div>
     </div>
-    <p className="muted">After the order is saved, Mercado Pago will open in a new tab. Your payment remains Pending until the merchant verifies it. Import duty and final shipping charges may be confirmed before dispatch.</p>
-    <button className="solid full" disabled={orderBusy||!items.length||(authUser&&!selectedAddressId)||shippingLoading||!shippingSetting} onClick={placeCustomerOrder}>{orderBusy?'SAVING ORDER...':'PAY NOW · MERCADO PAGO'}</button>
+    <p className="muted">After the order is saved, use the button on the confirmation page to open Mercado Pago in this tab. Your payment remains Pending until the merchant verifies it. Import duty and final shipping charges may be confirmed before dispatch.</p>
+    <button className="solid full" disabled={orderBusy||!items.length||(authUser&&!selectedAddressId)||shippingLoading} onClick={placeCustomerOrder}>{orderBusy?'SAVING ORDER...':'PLACE ORDER · CONTINUE TO PAYMENT'}</button>
    </div>
   </div>
   <button className="text-link" style={{marginTop:'20px'}} onClick={()=>{setPage('home');setCartOpen(true)}}>← BACK TO SHOPPING BAG</button>
@@ -439,7 +451,7 @@ export default function App(){
     <div className="contact-card">
      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'12px',flexWrap:'wrap'}}><h3 style={{margin:0}}>My delivery addresses</h3><button className="solid" type="button" onClick={startNewAddress}>+ ADD ADDRESS</button></div>
      {addresses.length===0?<p style={{marginTop:'18px'}}>You have not saved a delivery address yet.</p>:<div style={{display:'grid',gap:'14px',marginTop:'18px'}}>{addresses.map(a=><div key={a.id} style={{border:'1px solid #e8e0d8',borderRadius:'10px',padding:'16px'}}><div style={{display:'flex',justifyContent:'space-between',gap:'10px',flexWrap:'wrap'}}><b>{a.label} {a.is_default?' · DEFAULT':''}</b><div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}><button className="outline" type="button" onClick={()=>startEditAddress(a)}>EDIT</button><button className="outline" type="button" onClick={()=>deleteCustomerAddress(a.id)}>DELETE</button></div></div><p style={{margin:'10px 0 4px'}}><b>{a.recipient_name}</b> · {a.phone}</p><p style={{margin:0}}>{a.address_line1}{a.address_line2?', '+a.address_line2:''}, {a.city}, {a.state} {a.postal_code}, {a.country}</p>{!a.is_default&&<button className="text-link" type="button" disabled={addressBusy} onClick={()=>makeDefaultAddress(a.id)} style={{marginTop:'10px'}}>MAKE DEFAULT ADDRESS</button>}</div>)}</div>}
-     {addressFormOpen&&<form onSubmit={saveCustomerAddress} style={{display:'grid',gap:'12px',marginTop:'22px',paddingTop:'18px',borderTop:'1px solid #e8e0d8'}}>
+     {addressFormOpen&&<form className="address-editor-form" onSubmit={saveCustomerAddress} style={{display:'grid',gap:'12px',marginTop:'22px',paddingTop:'18px',borderTop:'1px solid #e8e0d8'}}>
       <h3>{editingAddressId?'Edit delivery address':'Add delivery address'}</h3>
       <label>Address Label<select value={addressForm.label} onChange={e=>setAddressForm(v=>({...v,label:e.target.value}))}><option>Home</option><option>Office</option><option>Other</option></select></label>
       <label>Recipient Name<input value={addressForm.recipient_name} onChange={e=>setAddressForm(v=>({...v,recipient_name:e.target.value}))} required/></label>
