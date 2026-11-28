@@ -113,7 +113,7 @@ export default function App(){
  [addressForm,setAddressForm]=useState({label:'Home',recipient_name:'',phone:'',address_line1:'',address_line2:'',city:'',state:'',postal_code:'',country:'India',is_default:false}),
  [editingAddressId,setEditingAddressId]=useState(null),[addressFormOpen,setAddressFormOpen]=useState(false),[addressBusy,setAddressBusy]=useState(false),
  [orderHistory,setOrderHistory]=useState([]),[orderItemsById,setOrderItemsById]=useState({}),[ordersBusy,setOrdersBusy]=useState(false),
- [selectedAddressId,setSelectedAddressId]=useState(''),[guestDetails,setGuestDetails]=useState({name:'',email:'',phone:'',address_line1:'',address_line2:'',city:'',state:'',postal_code:'',country:'United States'}),[orderBusy,setOrderBusy]=useState(false),[lastPlacedOrder,setLastPlacedOrder]=useState(null),[shippingSetting,setShippingSetting]=useState(null),[shippingLoading,setShippingLoading]=useState(false),[shippingLoadError,setShippingLoadError]=useState(''),[trackOrderQuery,setTrackOrderQuery]=useState(''),[trackOrderResult,setTrackOrderResult]=useState(null),[trackOrderMessage,setTrackOrderMessage]=useState(''),[policyPage,setPolicyPage]=useState(''),[selectedPaymentMethod,setSelectedPaymentMethod]=useState('usdt'),[paymentReference,setPaymentReference]=useState('');
+ [selectedAddressId,setSelectedAddressId]=useState(''),[guestDetails,setGuestDetails]=useState({name:'',email:'',phone:'',address_line1:'',address_line2:'',city:'',state:'',postal_code:'',country:'United States'}),[orderBusy,setOrderBusy]=useState(false),[lastPlacedOrder,setLastPlacedOrder]=useState(null),[shippingSetting,setShippingSetting]=useState(null),[shippingLoading,setShippingLoading]=useState(false),[shippingLoadError,setShippingLoadError]=useState(''),[trackOrderQuery,setTrackOrderQuery]=useState(''),[trackOrderResult,setTrackOrderResult]=useState(null),[trackOrderMessage,setTrackOrderMessage]=useState(''),[policyPage,setPolicyPage]=useState(''),[selectedPaymentMethod,setSelectedPaymentMethod]=useState('mercadopago'),[paymentReference,setPaymentReference]=useState('');
  useEffect(()=>{
   let mounted=true;
   supabase.auth.getSession().then(({data})=>{if(mounted)setAuthUser(data?.session?.user||null);});
@@ -200,6 +200,7 @@ export default function App(){
   const address=authUser?addresses.find(a=>String(a.id)===String(selectedAddressId)):{label:'Guest',recipient_name:guestDetails.name,phone:guestDetails.phone,address_line1:guestDetails.address_line1,address_line2:guestDetails.address_line2,city:guestDetails.city,state:guestDetails.state,postal_code:guestDetails.postal_code,country:guestDetails.country};
   if(!address||!address.recipient_name||!address.phone||!address.address_line1||!address.city||!address.state||!address.postal_code||!address.country||(!authUser&&!guestDetails.email)){showNotice('Please complete all required delivery and contact details.');return;}
   if(items.some(p=>!Number.isFinite(Number(p.price))||Number(p.price)<=0)){showNotice('A product has no confirmed price. Please contact our team before ordering.');return;}
+  const paymentTab=window.open('about:blank','_blank');
   setOrderBusy(true);
   try{
    let orderUser=authUser;
@@ -216,19 +217,19 @@ export default function App(){
    const countryName=address.country||((countries.find(c=>c[1]===country)||[])[0]||'');
    const orderNumber='GMX-'+new Date().toISOString().replace(/[-:T.Z]/g,'').slice(0,14)+'-'+Math.random().toString(36).slice(2,6).toUpperCase();
    const shippingAddress={label:address.label||'Delivery',recipient_name:address.recipient_name,phone:address.phone,address_line1:address.address_line1,address_line2:address.address_line2||'',city:address.city,state:address.state,postal_code:address.postal_code,country:address.country};
-   const orderPayload={order_number:orderNumber,status:'Pending',payment_method:selectedPaymentMethod,payment_status:'Pending',payment_reference:paymentReference.trim()||null,customer_email:authUser?.email||guestDetails.email,country:countryName,currency:country,subtotal,shipping,tax,total,shipping_address:shippingAddress,user_id:orderUser.id};
+   const orderPayload={order_number:orderNumber,status:'Pending',payment_method:'mercadopago',payment_status:'Pending',payment_reference:null,customer_email:authUser?.email||guestDetails.email,country:countryName,currency:country,subtotal,shipping,tax,total,shipping_address:shippingAddress,user_id:orderUser.id};
    const {data:createdOrder,error:orderError}=await supabase.from('orders').insert(orderPayload).select('id,order_number,status,created_at,total,currency').single();
    if(orderError)throw orderError;
    const orderLines=items.map(p=>({order_id:createdOrder.id,product_id:p.id,product_name:p.name,quantity:Number(p.qty||1),unit_price:Number((Number(p.price)*rate).toFixed(2)),variant_id:p.variantId||null,variant_size:p.variantSize||null,variant_color:p.variantColor||null,variant_sku:p.variantSku||null}));
    const {error:itemsError}=await supabase.from('order_items').insert(orderLines);
    if(itemsError){await supabase.from('orders').delete().eq('id',createdOrder.id).eq('user_id',orderUser.id);throw itemsError;}
    const confirmed={...createdOrder,order_number:createdOrder.order_number||orderNumber,status:'Pending',total,currency:country,shipping_address:shippingAddress};
-   setLastPlacedOrder({...confirmed,payment_method:selectedPaymentMethod,payment_status:'Pending',payment_reference:paymentReference.trim()||null});setPaymentReference('');setItems([]);localStorage.gmxCart='';setPage('order-success');showNotice('Your order has been placed successfully!');
+   setLastPlacedOrder({...confirmed,payment_method:'mercadopago',payment_status:'Pending',payment_reference:null});setPaymentReference('');setItems([]);localStorage.gmxCart='';setPage('order-success');showNotice('Order saved. Complete payment in the Mercado Pago tab.');if(paymentTab)paymentTab.location.href='https://link.mercadopago.com.mx/gmxinduropa';
    const {data:updatedOrders}=await supabase.from('orders').select('*').eq('user_id',orderUser.id).order('created_at',{ascending:false});
    if(updatedOrders)setOrderHistory(updatedOrders);
    const {data:updatedLines}=await supabase.from('order_items').select('*').eq('order_id',createdOrder.id);
    if(updatedLines)setOrderItemsById(prev=>({...prev,[createdOrder.id]:updatedLines}));
-  }catch(error){console.error('Order placement failed:',error);showNotice('Order could not be placed: '+(error?.message||'Please try again.'));}
+  }catch(error){if(paymentTab)paymentTab.close();console.error('Order placement failed:',error);showNotice('Order could not be placed: '+(error?.message||'Please try again.'));}
   finally{setOrderBusy(false);}
  }
  async function saveCustomerProfile(e){
@@ -381,32 +382,15 @@ export default function App(){
     {shippingSetting&&freeShippingReached&&<p className="muted">Free shipping applied.</p>}
     <p style={{display:'flex',justifyContent:'space-between',fontSize:'18px',borderTop:'1px solid #ddd',paddingTop:'12px'}}><b>Estimated total</b><b>{money(shippingSetting?checkoutGrandTotal:checkoutSubtotal,country)}</b></p>
     <div style={{marginTop:'18px',paddingTop:'16px',borderTop:'1px solid #e8e0d8'}}>
-     <h3 style={{marginBottom:'12px'}}>Choose payment method</h3>
-     <div style={{display:'grid',gap:'10px'}}>
-      {[['usdt','USDT · Polygon Network'],['mexico','Mexico Bank Transfer'],['usa','USA Bank Transfer']].map(([value,label])=><label key={value} style={{display:'flex',alignItems:'center',gap:'10px',border:'1px solid #e8e0d8',borderRadius:'9px',padding:'12px',cursor:'pointer'}}>
-       <input type="radio" name="payment-method" value={value} checked={selectedPaymentMethod===value} onChange={()=>setSelectedPaymentMethod(value)}/><b>{label}</b>
-      </label>)}
+     <h3 style={{marginBottom:'12px'}}>Payment method</h3>
+     <div style={{border:'1px solid #e8e0d8',borderRadius:'9px',padding:'14px',background:'#faf8f5'}}>
+      <b>Mercado Pago · Mexico</b>
+      <p style={{margin:'8px 0'}}>Click the button below to open the secure payment page provided by GMX. Your order will first be saved with payment status Pending.</p>
+      <p className="muted" style={{marginBottom:0}}>The payment link is managed by the merchant. The amount and order details may need to be entered or selected on Mercado Pago's page.</p>
      </div>
-     {selectedPaymentMethod==='usdt'&&<div style={{marginTop:'14px',padding:'14px',background:'#faf8f5',borderRadius:'9px',overflowWrap:'anywhere'}}>
-      <b>Pay with USDT</b><p style={{margin:'8px 0'}}>Network: <b>Polygon</b></p>
-      <p style={{margin:'8px 0'}}>Wallet address:<br/><b>0x64d850e3F9B4C71212379AaE11F2A4002c9FB8eB</b></p>
-      <button type="button" className="outline" onClick={()=>{if(navigator.clipboard?.writeText){navigator.clipboard.writeText('0x64d850e3F9B4C71212379AaE11F2A4002c9FB8eB').then(()=>showNotice('USDT wallet address copied.')).catch(()=>showNotice('Please copy the wallet address manually.'));}else showNotice('Please copy the wallet address manually.');}}>COPY WALLET ADDRESS</button>
-      <p className="muted" style={{marginBottom:0}}>Send USDT only through the Polygon network. Payments will remain pending until the transaction is verified by GMX FASHION INDIA.</p>
-     </div>}
-     {selectedPaymentMethod==='mexico'&&<div style={{marginTop:'14px',padding:'14px',background:'#faf8f5',borderRadius:'9px',overflowWrap:'anywhere'}}>
-      <b>Mexico Bank Transfer</b><p>Bank name: <b>Finco Pay</b></p><p>CLABE: <b>734180020021802466</b></p><p>Currency: MXN · Fee shown by account provider: Free</p>
-      <button type="button" className="outline" onClick={()=>{if(navigator.clipboard?.writeText){navigator.clipboard.writeText('734180020021802466').then(()=>showNotice('Mexico CLABE copied.')).catch(()=>showNotice('Please copy the CLABE manually.'));}else showNotice('Please copy the CLABE manually.');}}>COPY CLABE</button>
-     </div>}
-     {selectedPaymentMethod==='usa'&&<div style={{marginTop:'14px',padding:'14px',background:'#faf8f5',borderRadius:'9px',overflowWrap:'anywhere'}}>
-      <b>United States Bank Transfer</b><p>Beneficiary name: <b>Gurpreet Singh</b></p><p>Bank name: <b>Lead Bank</b></p><p>Routing number: <b>101019644</b></p><p>Account number: <b>219541391184</b></p><p>Account type: <b>Checking</b></p><p>Account provider fee shown: 3 USD</p>
-      <button type="button" className="outline" onClick={()=>{if(navigator.clipboard?.writeText){navigator.clipboard.writeText('Routing number: 101019644 | Account number: 219541391184').then(()=>showNotice('USA bank details copied.')).catch(()=>showNotice('Please copy the bank details manually.'));}else showNotice('Please copy the bank details manually.');}}>COPY BANK DETAILS</button>
-     </div>}
-     <label style={{display:'block',marginTop:'14px'}}>Transaction ID / Bank Transfer Reference (optional)
-      <input value={paymentReference} onChange={e=>setPaymentReference(e.target.value)} placeholder={selectedPaymentMethod==='usdt'?'Paste USDT transaction hash (TXID)':'Enter bank transfer reference'} maxLength={180} style={{width:'100%',marginTop:'7px',padding:'12px',border:'1px solid #ddd',borderRadius:'8px'}} />
-     </label>
     </div>
-    <p className="muted">After placing your order, send the exact amount using the selected USDT wallet or bank details above. You may enter a transaction ID or bank reference if available. GMX will check the receiving account and manually mark the payment as Paid. Send USDT only through the Polygon network. Import duty and final shipping charges may be confirmed before dispatch.</p>
-    <button className="solid full" disabled={orderBusy||!items.length||(authUser&&!selectedAddressId)||shippingLoading||!shippingSetting} onClick={placeCustomerOrder}>{orderBusy?'PLACING ORDER...':'CONFIRM ORDER · PAY BY TRANSFER'}</button>
+    <p className="muted">After the order is saved, Mercado Pago will open in a new tab. Your payment remains Pending until the merchant verifies it. Import duty and final shipping charges may be confirmed before dispatch.</p>
+    <button className="solid full" disabled={orderBusy||!items.length||(authUser&&!selectedAddressId)||shippingLoading||!shippingSetting} onClick={placeCustomerOrder}>{orderBusy?'SAVING ORDER...':'PAY NOW · MERCADO PAGO'}</button>
    </div>
   </div>
   <button className="text-link" style={{marginTop:'20px'}} onClick={()=>{setPage('home');setCartOpen(true)}}>← BACK TO SHOPPING BAG</button>
@@ -415,7 +399,8 @@ export default function App(){
   <div style={{fontSize:'48px',color:'#267a4b'}}>✓</div><label>ORDER RECEIVED</label><h2>Your order is <i>confirmed.</i></h2>
   <p>Thank you for shopping with GMX FASHION INDIA. Your order has been saved and is currently awaiting processing.</p>
   {lastPlacedOrder&&<div className="contact-card" style={{textAlign:'left',margin:'24px auto',maxWidth:'520px'}}><p><b>Order number:</b> {lastPlacedOrder.order_number}</p><p><b>Status:</b> Pending</p><p><b>Total:</b> {new Intl.NumberFormat(undefined,{style:'currency',currency:lastPlacedOrder.currency||country}).format(Number(lastPlacedOrder.total)||0)}</p></div>}
-  <p className="muted">Your order has been received. Please complete the transfer using the payment details shown at checkout. Our team will verify the money received in the wallet or bank account and update your payment status. Final shipping charges, duties and taxes may be confirmed before dispatch.</p>
+  <p className="muted">Your order has been saved. If Mercado Pago did not open, use the payment link below. Payment status will remain Pending until GMX verifies the payment.</p>
+  <a className="solid" href="https://link.mercadopago.com.mx/gmxinduropa" target="_blank" rel="noreferrer">OPEN MERCADO PAGO</a>
   <button className="solid" onClick={()=>setPage('account')}>VIEW MY ORDERS</button> <button className="outline" onClick={()=>{setPage('shop');setCat('All Collections')}}>CONTINUE SHOPPING</button>
  </section>}
  {page==='wholesale'&&<section className="section form-page"><label>GLOBAL SOURCING · WHOLESALE & EXPORT</label><h2>Become our international<br/><i>business partner.</i></h2><p>Partner with GMX FASHION INDIA to source authentic Indian fashion, spiritual products, traditional accessories and lifestyle collections for your market.</p><form onSubmit={e=>{e.preventDefault();setNotice('Thank you. Your enquiry has been prepared. Please send it to our team on WhatsApp.');}}><div className="form-grid">{['Full Name','Company Name','Country','Email','WhatsApp Number','Product Category','Required Quantity'].map((x,i)=><label>{x}<input required={i===0||i===3} placeholder={x}/></label>)}</div><label>Message<textarea placeholder="Tell us about the products and quantities you are interested in."/></label><button className="solid">SUBMIT ENQUIRY <ArrowRight/></button><a className="wa-inline" href={wa} target="_blank">OR CHAT WITH OUR TEAM ON WHATSAPP</a></form></section>}
